@@ -8,8 +8,14 @@ function Make<K extends keyof HTMLElementTagNameMap>(Tag: K, Class: string, Text
     return Made;
 }
 
-/** Where the relay is unless told otherwise: the page's own server if it is the relay, else the same machine on the relay's port. */
+/**
+ * Where the relay is unless told otherwise: the address the build was given (VITE_RELAY_URL, set
+ * on a hosted build such as Vercel's), else the page's own server if it is the relay, else the same
+ * machine on the relay's port.
+ */
 export function DefaultRelay(): string {
+    const Built = (import.meta.env.VITE_RELAY_URL as string | undefined)?.trim();
+    if (Built) return Built;
     const Secure = location.protocol === "https:";
     if (location.port === String(DefaultPort) || location.protocol === "https:") return `${Secure ? "wss" : "ws"}://${location.host}`;
     return `ws://${location.hostname || "localhost"}:${DefaultPort}`;
@@ -21,6 +27,21 @@ function Remembered(Key: string, Fallback: string): string {
 
 function Remember(Key: string, Value: string): void {
     try { localStorage.setItem(Key, Value); } catch { /* private window: nothing kept */ }
+}
+
+function Forget(Key: string): void {
+    try { localStorage.removeItem(Key); } catch { /* nothing kept anyway */ }
+}
+
+/**
+ * Wakes a relay that may be asleep (a free host stops it when idle, and takes about a minute to
+ * start again): an ordinary request to its address, whose answer is not needed.
+ */
+function Wake(Url: string): void {
+    try {
+        const Http = Url.replace(/^ws(s?):/, "http$1:");
+        void fetch(Http, { mode: "no-cors", cache: "no-store" }).catch(() => {});
+    } catch { /* an address that cannot be one: the connect will say so */ }
 }
 
 /**
@@ -58,7 +79,8 @@ export class MatchPage {
         this.Code.maxLength = 12;
         this.Code.autocomplete = "off";
         this.Code.addEventListener("keydown", Event => { if (Event.key === "Enter") this.Join(); });
-        this.Relay.value = Remembered("relay", DefaultRelay());
+        // Only a relay the player typed themselves is kept; otherwise the build's own default stays current.
+        this.Relay.value = Remembered("relayUrl", DefaultRelay());
         this.Relay.spellcheck = false;
         this.Name.value = Remembered("name", "player");
         this.Name.maxLength = 16;
@@ -90,6 +112,7 @@ export class MatchPage {
 
     Open(): void {
         this.Root.hidden = false;
+        Wake(this.Relay.value.trim() || DefaultRelay());
         if (!this.Playing && this.Waiting === null) this.Code.focus();
     }
 
@@ -118,7 +141,7 @@ export class MatchPage {
     private Settings(): { Url: string; Name: string } {
         const Url = this.Relay.value.trim() || DefaultRelay();
         const Name = this.Name.value.trim().replace(/\s+/g, "_") || "player";
-        Remember("relay", Url);
+        if (Url === DefaultRelay()) Forget("relayUrl"); else Remember("relayUrl", Url);
         Remember("name", Name);
         return { Url, Name };
     }
@@ -126,7 +149,7 @@ export class MatchPage {
     private async Host(): Promise<void> {
         const { Url, Name } = this.Settings();
         this.Busy(true);
-        this.Say("Opening a room…");
+        this.Say("Opening a room… (a relay that was asleep takes up to a minute to wake)");
         try {
             const Link = await WebSocketTransport.Connect(Url, NewRoomCode(), true, Name);
             this.Waiting = Link;
@@ -148,7 +171,7 @@ export class MatchPage {
         if (Code === null) { this.Say("Type the room code your opponent sees."); return; }
         const { Url, Name } = this.Settings();
         this.Busy(true);
-        this.Say(`Joining room ${Code}…`);
+        this.Say(`Joining room ${Code}… (a relay that was asleep takes up to a minute to wake)`);
         try {
             const Link = await WebSocketTransport.Connect(Url, Code, false, Name);
             this.Begin(Link, false);

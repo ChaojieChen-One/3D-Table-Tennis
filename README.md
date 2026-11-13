@@ -100,7 +100,14 @@ Browsers can't open raw network sockets, so both players connect through a small
 3. One player presses `M` and clicks **HOST A MATCH**, then reads out the room code.
 4. The other presses `M`, types the code, and clicks **JOIN**.
 
-**Over the internet**, run the relay somewhere both players can reach: a [playit.gg](https://playit.gg) tunnel to local port `26780` works, as does any host that runs Node and allows WebSockets. Then put its address (for example `wss://your-relay.example.com`) under **CONNECTION** on the Match page. Static hosts like GitHub Pages or Vercel can serve the game, but they can't run the relay.
+**Over the internet**, run the relay somewhere both players can reach. Static hosts like GitHub Pages or Vercel can serve the game, but they can't run the relay, so it goes on a Node host. On [Render](https://render.com)'s free plan:
+
+1. **New > Web Service**, connect this repository, and pick a region near the players.
+2. Runtime **Node**, build command `npm ci`, start command `npm start`, instance type **Free**. Render sets `PORT`; the relay reads it.
+3. Once it's live, note its address, e.g. `https://3d-table-tennis-relay.onrender.com`.
+4. In the Vercel project, add the environment variable `VITE_RELAY_URL` = `wss://3d-table-tennis-relay.onrender.com` (`wss://`, same host) and redeploy. The Match page then uses it with nothing to type.
+
+A free Render service sleeps after 15 minutes without traffic and takes about a minute to wake; opening the Match page starts waking it. A [playit.gg](https://playit.gg) tunnel to local port `26780` also works, typed under **CONNECTION** on the Match page.
 
 A match runs at half speed on both computers, and if one player leaves, the other goes back to practice.
 
