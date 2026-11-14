@@ -83,6 +83,29 @@ test("AHitArrivesMirroredAndLivesAsTheRemoteSidesStroke", () => {
     Check(SameBall(NetMirror.Ball(Struck), SeenAtHost), `sent ${Struck.Position} moving ${Struck.Velocity}; host now has ${SeenAtHost.Position} moving ${SeenAtHost.Velocity}`);
 });
 
+test("ARemoteHitReportsTheJumpItMadeForWhoeverDrawsTheBall", () => {
+    // The host's ball has flown on past the far racket; the stroke that then arrives puts it back
+    // on the true path. The correction is that jump: from where the ball was to where the stroke left it.
+    let Now = 0;
+    const [HostLink, JoinLink] = MemoryTransport.Pair(() => Now, 0, 0);
+    const Host = new End(HostLink, true);
+    const None = Host.Game.LastCorrection();
+    Host.Game.Launch(new BallState(new Vec3(0, 0.3, -1.3), new Vec3(0, 0, -4), Vec3.Zero), "Near");
+    for (let Steps = 0; Steps < 24; Steps++) { Now += Step; Host.Advance(); }
+    const Ghost = Host.Game.View().Ball.Position;
+    const Struck = new BallState(new Vec3(0.1, 0.3, 1.4), new Vec3(0, 1, -5), Vec3.Zero);
+    const Strike = () => { JoinLink.Send({ Kind: "Hit", Ball: Struck, At: 0 }); Now += Step; Host.Session.Pump(Step); };
+    Strike();
+    const First = Host.Game.LastCorrection();
+    Strike();
+    const Second = Host.Game.LastCorrection();
+    const True = NetMirror.Ball(Struck).Position;
+    expect(None, "a correction before any stroke").toBeNull();
+    Check(First !== null && Second !== null && First.From.Minus(Ghost).Length() < 1e-9 && First.To.Minus(True).Length() < 1e-9
+          && Second.Serial === First.Serial + 1 && Second.From.Minus(True).Length() < 1e-9,
+          `the ball had flown on to ${Ghost}; the stroke put it at ${True}; correction ${First?.Serial} runs from ${First?.From} to ${First?.To}, and the next is ${Second?.Serial}`);
+});
+
 test("APoseArrivesMirroredAtTheRemoteRacket", () => {
     let Now = 0;
     const [HostLink, JoinLink] = MemoryTransport.Pair(() => Now, 0, 0);

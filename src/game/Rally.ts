@@ -31,6 +31,13 @@ export interface Seat {
     readonly Swept: boolean;
 }
 
+/** A remote stroke's jump of the ball, m: from where this machine had it to where the stroke put it. */
+export interface Correction {
+    readonly From: Vec3;
+    readonly To: Vec3;
+    readonly Serial: number;
+}
+
 /**
  * One ball in play, advanced on the fixed clock. Each step this machine's player's racket follows
  * the cursor (and, once the ball has bounced on their side, rises to its height), the ball flies,
@@ -123,6 +130,7 @@ export class Rally {
     /** The host's call held for RemoteGrace in case the other player's stroke is still on its way, and how long it has left. */
     private Pending: Point | null = null;
     private PendingFor = 0;
+    private Corrected: Correction | null = null;
 
     private Last: Point | null = null;
     private Ball: BallState = new BallState(Feeder.Hold, Vec3.Zero, Vec3.Zero);
@@ -284,8 +292,17 @@ export class Rally {
         let Now = Struck;
         for (let Flown = Seconds / 2; Flown < Math.min(CatchUp, Rally.MostCatchUp); Flown += Seconds)
             Now = Collisions.Resolve(Now, Flight.Step(Now, Seconds), Seconds, []).Ball;
+        this.Corrected = { From: this.Ball.Position, To: Now.Position, Serial: (this.Corrected?.Serial ?? 0) + 1 };
         this.Launch(Now, By);
     }
+
+    /**
+     * Networked: where the last remote stroke moved the ball, or null before the first. Until a
+     * stroke arrives this machine's ball flies on past the other player's racket; the stroke then
+     * puts it on its true path at once, From where it was drawn To where it now is. The rally keeps
+     * the true ball; whoever draws it can ease across the gap, and Serial tells one correction from the next.
+     */
+    LastCorrection(): Correction | null { return this.Corrected; }
 
     /** Networked, off the host: the point the host has called, already in this machine's frame. */
     ApplyRemotePoint(Called: Point): void {
