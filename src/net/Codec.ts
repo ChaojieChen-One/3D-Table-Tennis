@@ -22,6 +22,8 @@ export function Encode(Msg: Message): string {
         case "Spawn": return `SPAWN ${B(Msg.Ball)} ${Msg.Striker}`;
         // The reason goes last, since it has spaces of its own; it runs to the end of the line.
         case "Point": return `POINT ${Msg.Call.Winner ?? "LET"} ${Msg.Call.Template.replace(/\n/g, " ")}`;
+        case "Serve": return `SERVE ${Msg.Server}`;
+        case "Toss": return `TOSS ${B(Msg.Ball)} ${N(Msg.At)}`;
         case "Ping": return `PING ${N(Msg.At)}`;
         case "Pong": return `PONG ${N(Msg.At)}`;
         case "Signal": return `SIGNAL ${Msg.Part} ${Msg.Of} ${Msg.Text}`;
@@ -53,6 +55,8 @@ export function Decode(Line: string): Message {
             if (Parts === null) throw new Error("Unreadable message: " + Line);
             return { Kind: "Point", Call: new Point(Parts[1] === "LET" ? null : SideOf(Parts[1]), Parts[2]) };
         }
+        case "SERVE": return { Kind: "Serve", Server: SideOf(Words[1]) };
+        case "TOSS": return { Kind: "Toss", Ball: Ball(), At: D(10) };
         case "PING": return { Kind: "Ping", At: D(1) };
         case "PONG": return { Kind: "Pong", At: D(1) };
         case "SIGNAL": return { Kind: "Signal", Part: D(1), Of: D(2), Text: Words[3] ?? "" };

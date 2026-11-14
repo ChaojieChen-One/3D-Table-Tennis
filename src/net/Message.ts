@@ -14,6 +14,9 @@ export type Message =
     | { readonly Kind: "Hit"; readonly Ball: BallState; readonly At: number; From?: number }
     | { readonly Kind: "Spawn"; readonly Ball: BallState; readonly Striker: Side; From?: number }
     | { readonly Kind: "Point"; readonly Call: Point; From?: number }
+    // Serving: the host says whose serve the next rally is; the server's own machine shares its toss, then its Hit.
+    | { readonly Kind: "Serve"; readonly Server: Side; From?: number }
+    | { readonly Kind: "Toss"; readonly Ball: BallState; readonly At: number; From?: number }
     | { readonly Kind: "Ping"; readonly At: number; From?: number }
     | { readonly Kind: "Pong"; readonly At: number; From?: number }
     // The link's own, not the game's (WebRtcTransport): a Signal is one piece of the direct

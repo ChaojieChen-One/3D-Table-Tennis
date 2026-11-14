@@ -54,11 +54,20 @@ Only `app` touches the DOM or Three.js; only `server` touches Node.
     `new Rally(Hand, Agent, true)` is networked singles; pass a seat list for anything else.
     `Step()` advances the player, flies the ball, moves every seat, resolves collisions against the
     swept rackets, then asks the `Referee`.
+  - Points start with a feed (`Rally`'s default, which every measured baseline uses) or, after
+    `SetServing(true)` (the app's default; `?serve=off`), a serve: the ball rides in the server's hand
+    (`AwaitingToss()`), `Toss()` (a double-click) throws it up `TossRise`, the lift meets it as it
+    falls, and the player's struck serve is read by `ShotAssist.Serve` and its first bounce held on
+    their court by `ServeAssist` (both off with `?assist=off`). The computer tosses after `ServeDelay`
+    and its ball leaves as one of `Serves.Presets`, solved once each. `Server()` says whose serve it is.
+  - `Referee` judges a service first (`BeginServe`, [ITTF] 2.6: 16 cm toss, struck falling behind the
+    end line, own court first; net lets 2.9.1.1; faults 2.10.1.1), then the rally.
   - `Referee` decides points under the ITTF Laws and cites law numbers. It maps racket index to end
     through the rally's seats. Reasons are templates with `{Near}`/`{Far}` placeholders:
     `Point.Reason(Names)` names them, and `Point.Mirrored()` gives the other end's view. Feeds count
     as the far end's stroke. A stalled rally is a let after 4 s. Doubles order of play (2.8.3) is not judged.
   - `Scoreboard` keeps the score by end under ITTF 2.11.1 and 2.12.1: games to 11 (win by 2 from 10-all), best of five.
+    `Server()` is the order of service (2.13.3, 2.13.6); `Rally` draws the first server by lot.
   - `Feeder` cycles its five `Drills`, each solved once by `LaunchSolver` (lazily, on first use).
   - `ShotAssist`: direction from `KeyAim` (20°) per held A/D plus `SwipeAim` (3°) per m/s of sideways
     motion; power is pace = `PaceAtRest` + `PacePerPush` × forward push on the arc that lands a
@@ -68,6 +77,9 @@ Only `app` touches the DOM or Three.js; only `server` touches Node.
   - `Opponent` (always written for the far end) reacts after `ReactionTime`, moves at `MoveSpeed`,
     steps in for short balls, and aims by scanning face angles through `Aiming` (contact + flight)
     until a return clears the net onto its target. `Mirrored` wraps any far-end agent to play the near end.
+    `new Opponent(Level)` plays at one of `Levels` (`Level.ts`: Rookie, Club, Pro, Champion; reaction,
+    speed, swings, targets, attack share, aim error). `DefaultLevel` (Pro) is the measured computer
+    and draws nothing at random; `?level=` picks one.
   - `RemoteRacket` shows another machine's racket from its pose messages; it is never swept.
   - `RallyView` is the immutable snapshot the screen draws: the ball and `Rackets[]`.
 - **`src/net`**: online play. `Message` + `Codec` (one text line each), `NetMirror` (the half turn
@@ -77,6 +89,8 @@ Only `app` touches the DOM or Three.js; only `server` touches Node.
   - Hitter authority: each machine decides its own player's hits and sends `Hit`; the host
     referees, spawns each ball (`Spawn`) toward a random end and sends each call (`Point`). A point
     the host wins is held `RemoteGrace` (0.15 game s) in case the other stroke is still coming.
+    With serving on, the host sends `Serve` (whose serve) instead of `Spawn`; the server's machine
+    sends `Toss`, then its `Hit`, which the others take as a struck service (`Referee.BeginServed`).
   - Rooms hold 2 to 5 seats; the relay tags every relayed line with the sender's seat (`From`).
   - Two clocks: `NetSession.Pump(GameSeconds, RealSeconds)`. The link runs on real time (60 poses
     and 2 pings a real second, every `At` the sender's real clock); only the hit catch-up crosses
@@ -157,7 +171,9 @@ The camera is the player's stance: `GameLoop` calls `Hand.SetStance(Rig.Eye(), R
    cap the combined tilt or lower `CursorFollower.FaceTilt`.
 2. The player's own shots don't seem to spin: measure before changing anything (the display's
    `BallView.MostShownRevs` squash, the mostly horizontal swing, `ShotAssist`'s curve correction and blend).
-3. Serving, to the owner's design: double-click tosses the ball (≥16 cm, struck on the way down,
-   [ITTF] 2.6); serve bounces on the server's side first; lets on net serves; service rotates every
-   2 points and every point from 10-all. `ServeAssist` is ported and waits for it.
+3. Serving is built. Still open: a HUD line for whose serve it is and "double-click to serve"
+   (`Rally.Server()`, `AwaitingToss()`); a struck serve crossing the wire is covered only by the
+   toss and fault test (`NetServe.test.ts`); the computer's racket does not really strike its serve
+   (the ball leaves as the solved launch); the serve's pace constants (`ShotAssist.ServePace*`)
+   were tuned by simulation, not by play.
 4. Doubles: order of play (2.8.3) in the `Referee`, and the match code to fill four seats.

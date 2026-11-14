@@ -68,6 +68,8 @@ export class NetSession {
         Game.SetOnLocalHit(Struck => this.SendHit(Struck));
         Game.SetOnSpawn((Spawned, Striker) => Link.Send({ Kind: "Spawn", Ball: Spawned, Striker }));
         Game.SetOnPoint(Called => Link.Send({ Kind: "Point", Call: Called }));
+        Game.SetOnServe(Server => Link.Send({ Kind: "Serve", Server }));
+        Game.SetOnToss(Tossed => Link.Send({ Kind: "Toss", Ball: Tossed, At: this.Clock }));
     }
 
     /** Whether the other machine is still there. */
@@ -137,6 +139,8 @@ export class NetSession {
             // The host's near end is this machine's far end, so its sides swap along with its frame.
             case "Spawn": this.Game.ApplySpawn(NetMirror.Ball(Msg.Ball), Other(Msg.Striker)); break;
             case "Point": this.Game.ApplyRemotePoint(Msg.Call.Mirrored()); break;
+            case "Serve": this.Game.ApplyServe(Other(Msg.Server)); break;
+            case "Toss": this.Game.ApplyRemoteToss(NetMirror.Ball(Msg.Ball), this.Lag / 2); break;
             case "Ping": this.Link.Send({ Kind: "Pong", At: Msg.At }); break;
             case "Pong": this.Measure(Msg.At); break;
             case "Hello": if (Msg.From !== undefined) this.Names.set(Msg.From, Msg.Name); break;

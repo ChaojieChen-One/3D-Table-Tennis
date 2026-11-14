@@ -1,8 +1,9 @@
+import { Air } from "../engine/Air";
 import { BallState } from "../engine/BallState";
 import { CollisionResult, Collisions } from "../engine/Collisions";
 import { Flight } from "../engine/Flight";
 import { RacketSweep } from "../engine/RacketSweep";
-import { BallSpec, RacketSpec } from "../engine/Specs";
+import { BallSpec, RacketSpec, TableSpec } from "../engine/Specs";
 import { Clamp } from "../engine/math/Numeric";
 import { Vec3 } from "../engine/math/Vec3";
 import { Aiming } from "./Aiming";
@@ -17,6 +18,8 @@ import { HalfTurnBall, RacketAgent } from "./RacketAgent";
 import { RallyView } from "./RallyView";
 import { Point, Referee } from "./Referee";
 import { Score, Scoreboard } from "./Scoreboard";
+import { ServeAssist } from "./ServeAssist";
+import { Serves } from "./Serves";
 import { Shot, ShotAssist } from "./ShotAssist";
 import { Other, Side } from "./Side";
 
@@ -51,8 +54,18 @@ export interface Correction {
  *
  * Networked, the remote seats are never swept: each machine decides its own player's hits and
  * shares them (hitter authority), so the others' strokes arrive through ApplyRemoteHit. The host
- * referees: it alone puts each ball in play, from a random end while there are no serves, and
- * calls each point; the other machines follow.
+ * referees: it alone puts each ball in play and calls each point; the other machines follow.
+ *
+ * A point starts one of two ways. With serving off (the default, and the drills) the ball is fed:
+ * from the Feeder in practice, toward a random end in a match. With serving on (SetServing, the
+ * owner's design in the Java edition's docs/HANDOFF.md) it is served under [ITTF] 2.6, by the end
+ * the Scoreboard says: the ball rests in the server's free hand, just in front of their racket and
+ * behind their end line; this machine's player tosses it with Toss (a double-click) and strikes it
+ * as it falls with their ordinary swing, the lift raising their racket to it; the computer tosses
+ * the same toss after ServeDelay and strikes one of its Serves. The player's struck serve is read
+ * by ShotAssist.Serve and its first bounce held on their own court by ServeAssist, unless the shot
+ * assist is off. Networked, the host says whose serve it is, the server's own machine tosses and
+ * strikes (hitter authority), and the others follow its toss and its hit.
  */
 export class Rally {
     /** Index of each racket in the engine's results: this machine's player, then the seats in order. */
@@ -82,6 +95,26 @@ export class Rally {
 
     /** TUNED: how long a won game or match stands on the board before the next ball, s. */
     static readonly GameOverDelay = 3.0;
+
+    /**
+     * Where a server's free hand holds the ball, from their racket: HandAhead toward the net, m,
+     * but never nearer the end line than HandBehindLine, and HandHeight above the playing surface
+     * ([ITTF] 2.6.4: above the surface and behind the end line until it is struck). TUNED: straight
+     * ahead of the racket, so a push forward meets the falling ball.
+     */
+    static readonly HandAhead = 0.30;
+    static readonly HandBehindLine = 0.08;
+    static readonly HandHeight = 0.25;
+
+    /**
+     * TUNED: how far the toss rises, m: straight up, without spin, and well over the 16 cm of
+     * [ITTF] 2.6.2. It is in the air about 0.6 s, and falls through the lift's reach no faster
+     * than the lift follows.
+     */
+    static readonly TossRise = 0.50;
+
+    /** TUNED: how long the computer holds the ball before it tosses, s: time to see whose serve it is. */
+    static readonly ServeDelay = 0.8;
 
     /**
      * TUNED: the aim help's default strength, 0 (off) to 1. The third hitting help: as a ball that
@@ -123,6 +156,24 @@ export class Rally {
     private OnLocalHit: (Struck: BallState) => void = () => {};
     private OnSpawn: (Spawned: BallState, Striker: Side) => void = () => {};
     private OnPoint: (Called: Point) => void = () => {};
+    private OnServe: (Server: Side) => void = () => {};
+    private OnToss: (Tossed: BallState) => void = () => {};
+
+    /** Whether points start with a service rather than a feed. */
+    private ServingOn = false;
+
+    /** Whose serve the rally in progress, or about to start, is; null with no serve (feeds, or before the first). */
+    private ServerNow: Side | null = null;
+
+    /** The end whose free hand holds the ball, waiting to toss it; null otherwise. */
+    private InHand: Side | null = null;
+
+    /** How long until the computer tosses the ball it holds, s. */
+    private TossIn = 0;
+
+    /** Whether the match's first server has been drawn ([ITTF] 2.13.1), and which of its Serves the computer plays next. */
+    private Drawn = false;
+    private NextServe = 0;
 
     /** Networked: the point is called, and nothing more counts until the host puts the next ball in play. */
     private Closed = false;
@@ -185,6 +236,48 @@ export class Rally {
 
     SetShotAssist(On: boolean): void { this.Shots = On ? new ShotAssist() : null; }
 
+    /**
+     * Whether each point starts with a service (true) or a feed (false, as a new Rally starts: the
+     * drills in practice, a ball toward a random end in a match). Takes effect with the next ball.
+     * Networked, the host's setting is the match's.
+     */
+    SetServing(On: boolean): void { this.ServingOn = On; }
+
+    /** Whether points start with a service. */
+    Serving(): boolean { return this.ServingOn; }
+
+    /** Whose serve it is: the end serving the rally in progress or about to start; null while balls are fed, and before the first serve. */
+    Server(): Side | null { return this.ServerNow; }
+
+    /** This machine's player holds the ball and has yet to toss it: a double-click (Toss) serves. */
+    AwaitingToss(): boolean { return this.Held && this.InHand === "Near"; }
+
+    /** The computer or the other player holds the ball and is about to toss it. */
+    AwaitingTheirToss(): boolean { return this.Held && this.InHand === "Far"; }
+
+    /** A service is under way: the ball has been tossed, and has not yet bounced on the receiver's court or been faulted. */
+    ServiceInFlight(): boolean { return !this.Held && this.Umpire.InService(); }
+
+    /** The name of the computer's last or coming serve, as UpcomingDrill names a feed. */
+    ComputerServe(): string { return Serves.Presets[this.NextServe % Serves.Presets.length].Name; }
+
+    /**
+     * The player's double-click: tosses the ball they hold straight up by TossRise, to be struck as
+     * it falls ([ITTF] 2.6.2, 2.6.3). True if a ball was tossed; false when it is not theirs to toss.
+     */
+    Toss(): boolean {
+        if (!this.AwaitingToss()) return false;
+        this.Throw("Near");
+        if (this.IsNetworked) this.OnToss(this.Ball);
+        return true;
+    }
+
+    /** Networked, on the host: told whose serve each rally is. */
+    SetOnServe(Listener: (Server: Side) => void): void { this.OnServe = Listener; }
+
+    /** Networked: told the ball as this machine's player tosses it, to share with the other machines. */
+    SetOnToss(Listener: (Tossed: BallState) => void): void { this.OnToss = Listener; }
+
     /** The player's last aimed shot, or null with none yet. */
     LastShot(): Shot | null { return this.Shots === null ? null : this.Shots.Last(); }
 
@@ -198,7 +291,9 @@ export class Rally {
     Step(): void {
         const Seconds = FixedClock.Step;
         const PlayerFrom = this.Player.Pose().Centre;
-        const Lifting = this.AutoLift && !this.Held && this.Umpire.Awaiting("Near");
+        // The lift meets a ball that has bounced on the player's side, and their own toss once it is falling.
+        const TossFalling = this.Umpire.ServeTossedBy() === "Near" && !this.Umpire.Over() && this.Ball.Velocity.Y < 0;
+        const Lifting = this.AutoLift && !this.Held && (this.Umpire.Awaiting("Near") || TossFalling);
         this.Player.LiftToward(Lifting ? this.Ball.Position.Y : ReachEnvelope.HitY);
         this.AimPlayer(Seconds);
         this.Player.Advance(Seconds);
@@ -206,6 +301,11 @@ export class Rally {
 
         if (this.Held) {
             for (const Each of this.Seats) Each.Agent.Follow(this.Ball, Seconds);
+            if (this.InHand !== null) {
+                // The ball rides in the server's free hand; the computer tosses it after ServeDelay.
+                this.Ball = new BallState(this.HandOf(this.InHand), Vec3.Zero, Vec3.Zero);
+                if (this.InHand === "Far" && this.ComputerAt("Far") >= 0 && (this.TossIn -= Seconds) <= 0) this.Throw("Far");
+            }
             this.CountDown(Seconds);
             return;
         }
@@ -227,39 +327,119 @@ export class Rally {
 
         const Resolved = Collisions.Resolve(this.Ball, Flown, Seconds, Sweeps);
         let Result: CollisionResult = { ...Resolved, Racket: Resolved.Racket < 0 ? -1 : RacketOf[Resolved.Racket] };
-        if (this.Shots !== null && Result.Racket === Rally.PlayerRacket)
-            Result = { ...Result, Ball: this.Shots.Shoot(this.Ball, Result.Ball, PlayerTo, this.Player.Moving(), this.Player.RightTilt()) };
+        const Tossed = this.Umpire.Over() ? null : this.Umpire.ServeTossedBy();
+        if (this.Shots !== null && Result.Racket === Rally.PlayerRacket) {
+            // The player's stroke is read by ShotAssist; their service by its Serve, its first bounce then held on their own court.
+            const Struck = Tossed === "Near"
+                ? ServeAssist.Correct(this.Shots.Serve(this.Ball, Result.Ball, PlayerTo, this.Player.Moving(), this.Player.RightTilt()), "Near", Seconds)
+                : this.Shots.Shoot(this.Ball, Result.Ball, PlayerTo, this.Player.Moving(), this.Player.RightTilt());
+            Result = { ...Result, Ball: Struck };
+        }
+        // The computer's service: as its toss falls back to the height it left the hand at, the ball leaves its racket as the serve it chose.
+        const Computer = this.ComputerAt("Far");
+        if (Tossed === "Far" && Computer >= 0 && Result.Racket < 0 && Result.Ball.Velocity.Y < 0 && Result.Ball.Position.Y <= Rally.HandHeight) {
+            const From = this.HandOf("Far");
+            Result = { Ball: Serves.Launch(this.NextServe, From), Table: false, Net: false, Floor: false, Racket: Computer };
+            this.Seats[Computer - 1].Agent.Served?.();
+        }
         this.LastResult = Result;
         this.Ball = Result.Ball;
         if (this.IsNetworked && !this.Closed && Result.Racket === Rally.PlayerRacket) this.OnLocalHit(this.Ball);
 
-        if (Number.isNaN(this.FeedIn) && !this.Closed) {
-            if (this.Pending !== null) {
-                this.PendingFor -= Seconds;
-                if (this.PendingFor <= 0) this.Award(this.Pending);
-            } else {
-                const Decided = this.Umpire.Judge(Result, this.Gone(), Seconds);
-                // Off the host, the local Referee only keeps Awaiting true for the lift and aim help; the host's calls count.
-                if (Decided !== null && this.Referees) {
-                    const TheirReturnMayBeComing = this.IsNetworked && Decided.Winner === "Near";
-                    if (TheirReturnMayBeComing) {
-                        this.Pending = Decided;
-                        this.PendingFor = Rally.RemoteGrace;
-                    } else {
-                        this.Award(Decided);
-                    }
-                }
-            }
-        }
+        this.Rule(Result, Seconds);
         this.CountDown(Seconds);
     }
 
+    /** One step's ball before the Referee: a point decided is awarded, or, where the other player's stroke may still be coming, held. */
+    private Rule(Result: CollisionResult, Seconds: number): void {
+        if (!Number.isNaN(this.FeedIn) || this.Closed) return;
+        if (this.Pending !== null) {
+            this.PendingFor -= Seconds;
+            if (this.PendingFor <= 0) this.Award(this.Pending);
+            return;
+        }
+        const Decided = this.Umpire.Judge(Result, this.Gone(), Seconds);
+        // Off the host, the local Referee only keeps Awaiting true for the lift and aim help; the host's calls count.
+        if (Decided === null || !this.Referees) return;
+        const TheirReturnMayBeComing = this.IsNetworked && Decided.Winner === "Near";
+        if (TheirReturnMayBeComing) {
+            this.Pending = Decided;
+            this.PendingFor = Rally.RemoteGrace;
+        } else {
+            this.Award(Decided);
+        }
+    }
+
+    /** The engine index of the first racket at End that this machine plays for the computer (swept); -1 if a person plays there. */
+    private ComputerAt(End: Side): number {
+        const Index = this.Seats.findIndex(Each => Each.Side === End && Each.Swept);
+        return Index < 0 ? -1 : Index + 1;
+    }
+
+    /** Where End's server holds the ball: HandAhead of their racket toward the net, behind their end line, HandHeight up. */
+    private HandOf(End: Side): Vec3 {
+        const Seat = this.Seats.find(Each => Each.Side === End);
+        const Racket = End === "Near" || Seat === undefined ? this.Player.Pose().Centre : Seat.Agent.Pose().Centre;
+        const Line = TableSpec.HalfLength + Rally.HandBehindLine;
+        const Z = End === "Near" ? Math.max(Racket.Z - Rally.HandAhead, Line) : Math.min(Racket.Z + Rally.HandAhead, -Line);
+        return new Vec3(Racket.X, Rally.HandHeight, Z);
+    }
+
+    /** By's toss: the ball leaves their hand straight up, without spin, fast enough to rise TossRise under gravity alone. */
+    private Throw(By: Side): void {
+        const Up = Math.sqrt(2 * -Air.Gravity.Y * Rally.TossRise);
+        this.Ball = new BallState(this.HandOf(By), new Vec3(0, Up, 0), Vec3.Zero);
+        this.Held = false;
+        this.InHand = null;
+        this.FeedIn = Number.NaN;
+        this.Umpire.BeginServe(By, this.Ball);
+    }
+
     /**
-     * Sends a new ball at once; after a finished game or match, the next one starts from love-all.
-     * Networked, the host sends the warm-up feed toward a random end, as the other end's stroke,
-     * while there are no serves; off the host, this does nothing (the host's Spawn arrives instead).
+     * The next rally is Server's to serve: the ball goes to their hand. This machine's player
+     * tosses when they choose (there is no time limit); the computer after ServeDelay.
+     */
+    private Ready(Server: Side): void {
+        this.Closed = false;
+        this.Pending = null;
+        this.ServerNow = Server;
+        this.InHand = Server;
+        this.Held = true;
+        this.FeedIn = Number.NaN;
+        this.TossIn = Rally.ServeDelay;
+        this.Ball = new BallState(this.HandOf(Server), Vec3.Zero, Vec3.Zero);
+        if (Server === "Far" && this.ComputerAt("Far") >= 0) {
+            // Which of its serves is drawn now and solved while the ball is still in its hand.
+            this.NextServe = Math.min(Serves.Presets.length - 1, Math.floor(this.Coin() * Serves.Presets.length));
+            Serves.Launch(this.NextServe, this.HandOf("Far"));
+        }
+    }
+
+    /** Before a served rally: the board moves on, the first server of a new match is drawn by lot ([ITTF] 2.13.1), and the board says whose serve it is. */
+    private NextServer(): Side {
+        const NewMatch = !this.Drawn || this.Board.Now().MatchWinner !== null;
+        this.Board.Next();
+        if (NewMatch) this.Board.SetFirstServer(this.Coin() < 0.5 ? "Near" : "Far");
+        this.Drawn = true;
+        return this.Board.Server();
+    }
+
+    /**
+     * Starts the next point at once; after a finished game or match, the next one starts from
+     * love-all. With serving on, the ball goes to the server's hand (networked, the host says whose
+     * serve it is). With it off, a new ball is sent: the next drill in practice, or, networked, the
+     * host's warm-up feed toward a random end, as the other end's stroke. Off the host, this does
+     * nothing (the host's Serve or Spawn arrives instead).
      */
     FeedNow(): void {
+        if (this.IsNetworked && !this.Referees) return;
+        if (this.ServingOn) {
+            const Server = this.NextServer();
+            this.Ready(Server);
+            if (this.IsNetworked) this.OnServe(Server);
+            return;
+        }
+        this.ServerNow = null;
         if (!this.IsNetworked) {
             this.Board.Next();
             this.Launch(this.Feed.Next(), "Far");
@@ -276,7 +456,30 @@ export class Rally {
     /** Networked, off the host: the ball the host has just put in play, already in this machine's frame. */
     ApplySpawn(Spawned: BallState, Striker: Side): void {
         this.Board.Next();
+        this.ServerNow = null;
         this.Spawn(Spawned, Striker);
+    }
+
+    /** Networked, off the host: the host says the next rally is Server's to serve, already in this machine's frame. */
+    ApplyServe(Server: Side): void {
+        this.Board.Next();
+        this.Ready(Server);
+    }
+
+    /**
+     * Networked: another player's toss, already in this machine's frame, flown forward by CatchUp
+     * (up to MostCatchUp) as a remote stroke is. Only the end holding the ball can toss it.
+     */
+    ApplyRemoteToss(Tossed: BallState, CatchUp: number, By: Side = "Far"): void {
+        if (this.Closed || !this.Held || this.InHand !== By) return;
+        this.Ball = Tossed;
+        this.Held = false;
+        this.InHand = null;
+        this.FeedIn = Number.NaN;
+        this.Umpire.BeginServe(By, Tossed);
+        const Seconds = FixedClock.Step;
+        for (let Flown = Seconds / 2; Flown < Math.min(CatchUp, Rally.MostCatchUp); Flown += Seconds)
+            this.Ball = Collisions.Resolve(this.Ball, Flight.Step(this.Ball, Seconds), Seconds, []).Ball;
     }
 
     /**
@@ -284,11 +487,30 @@ export class Rally {
      * (up to MostCatchUp) to make up for its trip here. By is the end they play for (the far end in
      * singles). Overturns a call the host is still holding; once a point is called, a late stroke
      * changes nothing.
+     *
+     * A stroke by the end whose toss is in the air (or, should the toss not have arrived, still in
+     * their hand) is their service: their own machine judged the toss and the strike, and from here
+     * the Referee judges it as a struck service. Its catch-up is flown before the Referee, since a
+     * serve's first bounce, on the server's own court, can fall within it.
      */
     ApplyRemoteHit(Struck: BallState, CatchUp: number, By: Side = "Far"): void {
         if (this.Closed) return;
         this.Pending = null;
         const Seconds = FixedClock.Step;
+        const Service = this.Umpire.ServeTossedBy() === By || (this.Held && this.InHand === By);
+        if (Service) {
+            this.Ball = Struck;
+            this.Held = false;
+            this.InHand = null;
+            this.FeedIn = Number.NaN;
+            this.Umpire.BeginServed(By);
+            for (let Flown = Seconds / 2; Flown < Math.min(CatchUp, Rally.MostCatchUp); Flown += Seconds) {
+                const Next = Collisions.Resolve(this.Ball, Flight.Step(this.Ball, Seconds), Seconds, []);
+                this.Ball = Next.Ball;
+                this.Rule(Next, Seconds);
+            }
+            return;
+        }
         let Now = Struck;
         for (let Flown = Seconds / 2; Flown < Math.min(CatchUp, Rally.MostCatchUp); Flown += Seconds)
             Now = Collisions.Resolve(Now, Flight.Step(Now, Seconds), Seconds, []).Ball;
@@ -341,6 +563,7 @@ export class Rally {
     Launch(Ball: BallState, Striker: Side): void {
         this.Ball = Ball;
         this.Held = false;
+        this.InHand = null;
         this.FeedIn = Number.NaN;
         this.Umpire.Begin(Striker);
     }
@@ -349,6 +572,7 @@ export class Rally {
     Hold(At: Vec3): void {
         this.Ball = new BallState(At, Vec3.Zero, Vec3.Zero);
         this.Held = true;
+        this.InHand = null;
         this.FeedIn = Number.NaN;
     }
 
