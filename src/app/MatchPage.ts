@@ -61,6 +61,7 @@ export class MatchPage {
     private readonly LeaveButton = Make("button", "hud-button", "LEAVE MATCH");
     private Waiting: WebSocketTransport | null = null;
     private Playing = false;
+    private InMatch = "";
 
     /**
      * OnStart is given each link once the other player is there (Host true on the machine that
@@ -185,9 +186,21 @@ export class MatchPage {
         this.Waiting = null;
         this.Playing = true;
         this.Busy(true);
-        this.Say(`In a match${Host ? ` (room ${Link.Code})` : ""}. Close this page to play.`);
+        this.InMatch = `In a match${Host ? ` (room ${Link.Code})` : ""}. Close this page to play.`;
+        this.Say(this.InMatch);
         this.OnStart(Link, Host, "OPP");
         this.Close();
+    }
+
+    /**
+     * While the match lasts, the status line also says how the link is doing, as Describe words
+     * it ("PING 34 ms · DIRECT"), refreshed twice a second.
+     */
+    ShowLink(Describe: () => string): void {
+        const Timer = setInterval(() => {
+            if (!this.Playing) clearInterval(Timer);
+            else if (this.IsOpen()) this.Say(`${this.InMatch}  ${Describe()}`);
+        }, 500);
     }
 
     private Leave(): void {

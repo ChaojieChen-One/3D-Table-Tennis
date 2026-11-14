@@ -6,6 +6,7 @@ import { Opponent } from "../game/Opponent";
 import { Rally } from "../game/Rally";
 import { RemoteRacket } from "../game/RemoteRacket";
 import { NetSession } from "../net/NetSession";
+import { WebRtcTransport } from "../net/WebRtcTransport";
 import { WebSocketTransport } from "../net/WebSocketTransport";
 import { CameraRig } from "./camera/CameraRig";
 import { CourtOverlay } from "./CourtOverlay";
@@ -116,7 +117,10 @@ function StartMatch(Link: WebSocketTransport, AsHost: boolean, Badge: string): v
     const Remote = new RemoteRacket(new Vec3(0, 0.2, Opponent.StandZ));
     const Match = Configured(new Rally(Hand, Remote, true));
     Loop.SetGame(Match);
-    Loop.SetNet(new NetSession(Link, Hand, Remote, Match, AsHost), () => {
+    // The match starts over the relay and moves to a direct connection by itself when one can be made.
+    const Session = new NetSession(WebRtcTransport.Over(Link, AsHost), Hand, Remote, Match, AsHost);
+    Page.ShowLink(() => Session.Describe());
+    Loop.SetNet(Session, () => {
         BackToPractice();
         Page.Ended("Your opponent left the match.");
     });
