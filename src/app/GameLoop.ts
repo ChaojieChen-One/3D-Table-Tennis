@@ -5,6 +5,7 @@ import { CursorFollower } from "../game/control/CursorFollower";
 import { NetSession } from "../net/NetSession";
 import { CameraRig } from "./camera/CameraRig";
 import { CourtOverlay } from "./CourtOverlay";
+import { RallyEvents } from "./RallyEvents";
 import { TableScene } from "./scene/TableScene";
 import { SpinLine } from "./SpinLine";
 
@@ -25,6 +26,9 @@ export class GameLoop {
     /** The speeds [ and ] step through, game seconds per real second. */
     private static readonly Speeds = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0];
 
+    /** Further than this in one step, m, the ball did not fly there: it was put there. */
+    private static readonly Jump = 0.2;
+
     private readonly Clock = new FixedClock();
     private GameSpeed = GameLoop.DefaultSpeed;
     private Paused = false;
@@ -36,6 +40,10 @@ export class GameLoop {
     private Before: RallyView;
     private After: RallyView;
     private LastFrame = -1;
+
+    /** Whoever shows or sounds the rally (RallyEvents), and the last call they were told of. */
+    private readonly Listeners: RallyEvents[] = [];
+    private ToldPoint: unknown = null;
 
     constructor(private Game: Rally,
                 private readonly Hand: CursorFollower,
@@ -53,6 +61,9 @@ export class GameLoop {
         const Frame = (Now: number) => { this.Handle(Now); requestAnimationFrame(Frame); };
         requestAnimationFrame(Frame);
     }
+
+    /** Tells Listener what happens in the rally from now on. */
+    Listen(Listener: RallyEvents): void { this.Listeners.push(Listener); }
 
     /** One frame at Now, ms. */
     Handle(Now: number): void {
@@ -77,10 +88,13 @@ export class GameLoop {
             this.After = this.Game.View();
             this.World.RecordBall(this.After.Ball, FixedClock.Step);
             this.MarkContacts();
+            this.TellStep();
         }
-        this.Draw(RallyView.Between(this.Before, this.After, this.Clock.Alpha()));
+        const Drawn = RallyView.Between(this.Before, this.After, this.Clock.Alpha());
+        this.Draw(Drawn);
         // After drawing, so a mark riding on a racket follows where it was just drawn.
         this.World.Advance(Seconds);
+        for (const Each of this.Listeners) Each.Frame?.(RealSeconds, Seconds, Drawn);
         this.Render();
     }
 
@@ -91,6 +105,7 @@ export class GameLoop {
     SetGame(Next: Rally): void {
         this.Game = Next;
         this.Before = this.After = Next.View();
+        this.ToldPoint = Next.LastPoint();
         this.World.SetRacketCount(this.After.Rackets.length);
     }
 
@@ -157,6 +172,27 @@ export class GameLoop {
         const SpeedChange = this.After.Ball.Velocity.Minus(this.Before.Ball.Velocity).Length();
         if (Struck.Table) this.World.TableImpact(Ball, SpeedChange);
         if (Struck.Racket >= 0) this.World.RacketImpact(Struck.Racket, Ball, SpeedChange);
+    }
+
+    /** Tells the listeners what the last step's ball struck, a new ball, and a new call. */
+    private TellStep(): void {
+        if (this.Listeners.length === 0) return;
+        const Struck = this.Game.LastStep(), Ball = this.After.Ball, At = Ball.Position;
+        const SpeedChange = Ball.Velocity.Minus(this.Before.Ball.Velocity).Length();
+        // A ball that jumped further than any flight covers in one step is a new one.
+        const Fresh = At.Minus(this.Before.Ball.Position).Length() > GameLoop.Jump;
+        for (const Each of this.Listeners) {
+            if (Fresh) Each.NewBall?.(Ball);
+            if (Struck.Table) Each.Bounce?.(At, SpeedChange, Ball);
+            if (Struck.Racket >= 0) Each.Hit?.(Struck.Racket, At, SpeedChange, Ball);
+            if (Struck.Net) Each.Net?.(At, SpeedChange);
+            if (Struck.Floor) Each.Floor?.(At, SpeedChange);
+        }
+        const Called = this.Game.LastPoint();
+        if (Called !== this.ToldPoint) {
+            this.ToldPoint = Called;
+            if (Called !== null) for (const Each of this.Listeners) Each.Point?.(Called, this.Game.Score());
+        }
     }
 
     private Draw(View: RallyView): void {
