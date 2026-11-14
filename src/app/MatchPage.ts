@@ -1,12 +1,6 @@
 import { CleanRoomCode, DefaultPort, NewRoomCode } from "../net/Relay";
 import { WebSocketTransport } from "../net/WebSocketTransport";
-
-function Make<K extends keyof HTMLElementTagNameMap>(Tag: K, Class: string, Text = ""): HTMLElementTagNameMap[K] {
-    const Made = document.createElement(Tag);
-    Made.className = Class;
-    if (Text) Made.textContent = Text;
-    return Made;
-}
+import { Icon, Make } from "./ui/Dom";
 
 /**
  * Where the relay is unless told otherwise: the address the build was given (VITE_RELAY_URL, set
@@ -56,9 +50,10 @@ export class MatchPage {
     private readonly Code = Make("input", "match-input");
     private readonly Relay = Make("input", "match-input");
     private readonly Name = Make("input", "match-input");
-    private readonly HostButton = Make("button", "hud-button match-primary", "HOST A MATCH");
-    private readonly JoinButton = Make("button", "hud-button", "JOIN");
-    private readonly LeaveButton = Make("button", "hud-button", "LEAVE MATCH");
+    private readonly Link = Make("div", "match-link");
+    private readonly HostButton = Make("button", "menu-button primary", "HOST A MATCH");
+    private readonly JoinButton = Make("button", "menu-button", "JOIN");
+    private readonly LeaveButton = Make("button", "menu-button", "LEAVE MATCH");
     private Waiting: WebSocketTransport | null = null;
     private Playing = false;
 
@@ -68,10 +63,12 @@ export class MatchPage {
      */
     constructor(private readonly OnStart: (Link: WebSocketTransport, Host: boolean, Opponent: string) => void,
                 private readonly OnLeave: () => void) {
-        const Card = Make("div", "match-card");
+        const Card = Make("div", "match-card panel");
         Card.setAttribute("role", "dialog");
         Card.setAttribute("aria-label", "Match");
-        const Close = Make("button", "match-close", "✕");
+        const Close = Make("button", "match-close");
+        Close.type = "button";
+        Close.append(Icon("M6 6l12 12M18 6L6 18"));
         Close.setAttribute("aria-label", "Close");
         Close.addEventListener("click", () => this.Close());
 
@@ -99,10 +96,15 @@ export class MatchPage {
         Settings.append(Summary, Field("Your name", this.Name), Field("Relay address", this.Relay),
                         Make("p", "match-note", "Both players need the same relay. Run it with npm run relay on one machine (it also serves the game), or host it anywhere Node runs."));
 
-        Card.append(Close, Make("h2", "match-title", "MATCH"),
-                    Make("p", "match-note", "Play another person: one of you hosts and reads out the room code, the other types it in."),
-                    this.HostButton, Make("div", "match-or", "OR"), JoinRow, this.RoomCode, this.Status, this.LeaveButton, Settings);
-        this.RoomCode.hidden = true;
+        this.Code.setAttribute("aria-label", "Room code");
+        this.Status.setAttribute("role", "status");
+        const Heading = Make("div", "match-heading");
+        Heading.append(Make("div", "match-kicker", "PLAY ANOTHER PERSON"), Make("h2", "panel-title", "ONLINE MATCH"));
+        Card.append(Close, Heading,
+                    Make("p", "match-note", "One of you hosts and reads out the room code; the other types it in."),
+                    this.HostButton, Make("div", "match-or", "OR JOIN WITH A CODE"), JoinRow, this.RoomCode, this.Status, this.Link,
+                    this.LeaveButton, Settings);
+        this.RoomCode.hidden = this.Link.hidden = true;
         this.Root.append(Card);
         this.Root.hidden = true;
         this.Root.addEventListener("keydown", Event => Event.stopPropagation());
@@ -128,6 +130,12 @@ export class MatchPage {
     }
 
     private Say(Line: string): void { this.Status.textContent = Line; }
+
+    /** The line about the connection under the status, e.g. "PING 34 ms · DIRECT"; empty hides it. */
+    ShowLink(Text: string): void {
+        this.Link.hidden = Text === "";
+        if (this.Link.textContent !== Text) this.Link.textContent = Text;
+    }
 
     /** The room code being shown, if any: for whoever hosts to read out. */
     ShownCode(): string { return this.RoomCode.hidden ? "" : this.RoomCode.textContent ?? ""; }

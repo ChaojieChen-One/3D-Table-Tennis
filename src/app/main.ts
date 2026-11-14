@@ -12,6 +12,8 @@ import { CourtOverlay } from "./CourtOverlay";
 import { GameLoop } from "./GameLoop";
 import { RacketControl } from "./input/RacketControl";
 import { MatchPage } from "./MatchPage";
+import { SoundEngine } from "./audio/SoundEngine";   // UI + SOUND
+import { InstallShell } from "./ui/Shell";            // UI + SOUND
 import { TableScene } from "./scene/TableScene";
 import "./style.css";
 
@@ -128,6 +130,15 @@ const Page: MatchPage = new MatchPage(StartMatch, () => { Loop.EndNet(); BackToP
 document.getElementById("ui")!.append(Page.Root);
 Hud.SetOnMatch(() => { Racket.ReleaseAll(); Page.Open(); });
 
+// ==== UI + SOUND (the 2D layer and the sound engine) — begin ====
+// The HUD and the sound both follow the rally through the loop's events; InstallShell (ui/Shell.ts)
+// joins the menus, Esc / N and the button sounds to the game. "?menu=off" (or view/aim/ball) starts in play.
+const Sound = new SoundEngine();
+Loop.Listen(Hud);
+Loop.Listen(Sound);
+InstallShell({ Hud, Sound, Loop, Page, Racket, Options, Restart: BackToPractice });
+// ==== UI + SOUND — end ====
+
 window.addEventListener("keydown", Event => {
     // While the Match page is open, typing goes to it; only Esc reaches the game, to close it.
     if (Page.IsOpen()) {
@@ -161,4 +172,4 @@ window.addEventListener("blur", () => Racket.ReleaseAll());
 
 Loop.Start();
 // For automated checks (Playwright): the loop and rally, read-only by convention.
-(window as unknown as { TableTennis: unknown }).TableTennis = { Loop, Rig, Hand };
+(window as unknown as { TableTennis: unknown }).TableTennis = { Loop, Rig, Hand, Hud, Sound };
