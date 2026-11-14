@@ -14,7 +14,9 @@ import { GameLoop } from "./GameLoop";
 import { Graphics, Qualities, Quality } from "./Graphics";
 import { RacketControl } from "./input/RacketControl";
 import { MatchPage } from "./MatchPage";
+import { SoundEngine } from "./audio/SoundEngine";
 import * as Art from "./scene/Art";
+import { InstallShell } from "./ui/Shell";
 import { TableScene } from "./scene/TableScene";
 import "./style.css";
 
@@ -81,8 +83,8 @@ else Racket.Attach(Renderer.domElement);
 
 // A neutral exposure overlay dims the rendered world without dimming the HUD.
 const Dimmer = document.getElementById("dimmer")!;
-const Saved = (() => { try { return Number(localStorage.getItem("courtBrightness") ?? 75); } catch { return 75; } })();
-let Brightness = Number.isFinite(Saved) ? Math.max(30, Math.min(100, Saved)) : 75;
+const Saved = (() => { try { return Number(localStorage.getItem("courtBrightness") ?? 100); } catch { return 100; } })();
+let Brightness = Number.isFinite(Saved) ? Math.max(30, Math.min(100, Saved)) : 100;
 const ShowBrightness = () => { Dimmer.style.opacity = String(1 - Brightness / 100); };
 ShowBrightness();
 const Hud = new CourtOverlay(Rig, {
@@ -124,7 +126,7 @@ function StartMatch(Link: WebSocketTransport, AsHost: boolean, Badge: string): v
     Loop.SetGame(Match);
     // The match starts over the relay and moves to a direct connection by itself when one can be made.
     const Session = new NetSession(WebRtcTransport.Over(Link, AsHost), Hand, Remote, Match, AsHost);
-    Page.ShowLink(() => Session.Describe());
+    Page.WatchLink(() => Session.Describe(), Text => Hud.ShowLink(Text));
     Loop.SetNet(Session, () => {
         BackToPractice();
         Page.Ended("Your opponent left the match.");
@@ -136,6 +138,22 @@ function StartMatch(Link: WebSocketTransport, AsHost: boolean, Badge: string): v
 const Page: MatchPage = new MatchPage(StartMatch, () => { Loop.EndNet(); BackToPractice(); });
 document.getElementById("ui")!.append(Page.Root);
 Hud.SetOnMatch(() => { Racket.ReleaseAll(); Page.Open(); });
+
+// ==== UI + SOUND (the 2D layer and the sound engine) — begin ====
+// The HUD and the sound both follow the rally through the loop's events; InstallShell (ui/Shell.ts)
+// joins the menus, Esc / N and the button sounds to the game. "?menu=off" (or view/aim/ball) starts in play.
+const Sound = new SoundEngine();
+Loop.Listen(Hud);
+Loop.Listen(Sound);
+InstallShell({ Hud, Sound, Loop, Page, Racket, Options, Restart: BackToPractice });
+// The quality picked in Settings. The stored one is where a launch starts, and the frame rate may
+// still step it down; one picked while playing stays. "?quality=" outranks both.
+let QualityHeard = false;
+Hud.OnQuality(Chosen => {
+    if (AskedQuality === null) Gfx.SetQuality(Chosen.toLowerCase() as Quality, QualityHeard);
+    QualityHeard = true;
+});
+// ==== UI + SOUND — end ====
 
 window.addEventListener("keydown", Event => {
     // While the Match page is open, typing goes to it; only Esc reaches the game, to close it.
@@ -170,4 +188,4 @@ window.addEventListener("blur", () => Racket.ReleaseAll());
 
 Loop.Start();
 // For automated checks (Playwright): the loop and rally, read-only by convention.
-(window as unknown as { TableTennis: unknown }).TableTennis = { Loop, Rig, Hand, Gfx };
+(window as unknown as { TableTennis: unknown }).TableTennis = { Loop, Rig, Hand, Gfx, Hud, Sound };
