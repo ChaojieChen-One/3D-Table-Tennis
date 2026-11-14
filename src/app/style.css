@@ -507,7 +507,8 @@ kbd {
   .hud-top-left { top: 12px; left: 12px; }
   .hud-top-right { top: 12px; right: 12px; }
   .hud-bottom-left { bottom: 12px; left: 12px; }
-  .hud-bottom-right { bottom: 12px; right: 12px; }
+  /* The corner buttons sit above the chips, which need the whole width down here. */
+  .hud-bottom-right { bottom: 62px; right: 12px; }
   /* No room between the scoreboard and the corner buttons: the rally counter goes under them. */
   .hud-top-centre { top: 124px; }
   .hud-wide, .chip-speed, .chip-words .chip-note, .hud-note { display: none; }

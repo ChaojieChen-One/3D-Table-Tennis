@@ -78,8 +78,8 @@ else Racket.Attach(Renderer.domElement);
 
 // A neutral exposure overlay dims the rendered world without dimming the HUD.
 const Dimmer = document.getElementById("dimmer")!;
-const Saved = (() => { try { return Number(localStorage.getItem("courtBrightness") ?? 75); } catch { return 75; } })();
-let Brightness = Number.isFinite(Saved) ? Math.max(30, Math.min(100, Saved)) : 75;
+const Saved = (() => { try { return Number(localStorage.getItem("courtBrightness") ?? 100); } catch { return 100; } })();
+let Brightness = Number.isFinite(Saved) ? Math.max(30, Math.min(100, Saved)) : 100;
 const ShowBrightness = () => { Dimmer.style.opacity = String(1 - Brightness / 100); };
 ShowBrightness();
 const Hud = new CourtOverlay(Rig, {

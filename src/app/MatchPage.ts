@@ -107,7 +107,8 @@ export class MatchPage {
         this.RoomCode.hidden = this.Link.hidden = true;
         this.Root.append(Card);
         this.Root.hidden = true;
-        this.Root.addEventListener("keydown", Event => Event.stopPropagation());
+        // Typing here is the page's own, so it goes no further; Esc closes the page from inside a field too.
+        this.Root.addEventListener("keydown", Event => { Event.stopPropagation(); if (Event.key === "Escape") this.Close(); });
     }
 
     IsOpen(): boolean { return !this.Root.hidden; }
