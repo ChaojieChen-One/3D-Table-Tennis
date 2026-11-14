@@ -32,6 +32,14 @@ export function StartRelay(Port: number = DefaultPort, Root: string = resolve("d
     const Rooms = new Map<string, Room>();
     const Http = createServer((Request, Response) => {
         const Path = decodeURIComponent((Request.url ?? "/").split("?")[0]);
+        // A small answer that says the relay is awake and how busy: for waking a sleeping host, and for debugging.
+        if (Path === "/health") {
+            let Seats = 0;
+            for (const Each of Rooms.values()) Seats += Each.Seats.filter(Taken => Taken !== null).length;
+            Response.writeHead(200, { "content-type": "application/json", "cache-control": "no-store", "access-control-allow-origin": "*" })
+                .end(JSON.stringify({ ok: true, rooms: Rooms.size, seats: Seats, uptime: Math.round(process.uptime()) }) + "\n");
+            return;
+        }
         let File = normalize(join(Root, Path === "/" ? "index.html" : Path));
         if (File !== Root && !File.startsWith(Root + sep)) { Response.writeHead(403).end(); return; }
         if (!existsSync(File) || statSync(File).isDirectory()) File = join(Root, "index.html");
@@ -43,13 +51,16 @@ export function StartRelay(Port: number = DefaultPort, Root: string = resolve("d
         createReadStream(File).pipe(Response);
     });
 
-    const Sockets = new WebSocketServer({ server: Http, maxPayload: LongestLine });
+    // No compression: a pose is one short line, and deflating each would cost time for nothing.
+    const Sockets = new WebSocketServer({ server: Http, maxPayload: LongestLine, perMessageDeflate: false });
 
     function Broadcast(Into: Room, From: number, Text: string): void {
         Into.Seats.forEach((Each, Seat) => { if (Each !== null && Seat !== From && Each.readyState === WebSocket.OPEN) Each.send(Text); });
     }
 
-    Sockets.on("connection", Socket => {
+    Sockets.on("connection", (Socket, Request) => {
+        // Each line goes out as it is written, not held back to share a packet (Nagle's algorithm off).
+        Request.socket.setNoDelay(true);
         let Code: string | null = null;
         let Seat = -1;
 

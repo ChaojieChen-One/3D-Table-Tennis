@@ -181,6 +181,21 @@ test("TwoPlayersMeetInARoomAndTheirLinesCrossTheRelay", async () => {
     Guest.Close();
 });
 
+test("TheRelaySaysHowBusyItIsAndDoesNotCompress", async () => {
+    const Host = await WebSocketTransport.Connect(Url, "BUSY", true, "ann");
+    const Guest = await WebSocketTransport.Connect(Url, "BUSY", false, "bo");
+    const Health = await (await fetch(Url.replace("ws:", "http:") + "/health")).json() as { ok: boolean; rooms: number; seats: number };
+    // The browser's side of the handshake: a relay that compressed would answer with the extension it accepted.
+    const Raw = new WebSocket(Url);
+    await new Promise<void>((Opened, Failed) => { Raw.onopen = () => Opened(); Raw.onerror = () => Failed(new Error("no socket")); });
+    const Extensions = Raw.extensions;
+    Raw.close();
+    Check(Health.ok && Health.rooms === 1 && Health.seats === 2 && Extensions === "",
+          `/health with one match on: ${JSON.stringify(Health)}; extensions the relay accepted: "${Extensions}" (none: no per-message deflate)`);
+    Host.Close();
+    Guest.Close();
+});
+
 test("AFullRoomOrAMissingOneIsRefused", async () => {
     const Host = await WebSocketTransport.Connect(Url, "FULL", true, "ann", 2);
     const Guest = await WebSocketTransport.Connect(Url, "FULL", false, "bo");
