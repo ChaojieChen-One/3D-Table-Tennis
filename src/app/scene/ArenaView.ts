@@ -287,10 +287,10 @@ function Lighting(): THREE.Group {
     const Cool = new THREE.SpotLight("#6ea6ff", 95, 0, 0.6, 0.7, 2);
     Cool.position.set(5.5, 5.2, -5);
     Cool.target.position.set(0, 0, 0);
-    const Warm = new THREE.SpotLight("#ffb27a", 60, 0, 0.6, 0.7, 2);
+    const Warm = new THREE.SpotLight("#ffc79a", 120, 0, 0.6, 0.7, 2);
     Warm.position.set(-5.5, 4.6, 5.5);
     Warm.target.position.set(0, 0, 0);
-    const Sky = new THREE.HemisphereLight("#8fa3c8", "#3a2226", 0.38);
+    const Sky = new THREE.HemisphereLight("#9fb1d2", "#4a2a2e", 0.5);
     const Under = new THREE.PointLight("#3d9cff", 1.6, 3.2, 2);
     Under.position.set(0, FloorY + 0.35, 0);
     Lights.add(Key, Key.target, Cool, Cool.target, Warm, Warm.target, Sky, Under);
