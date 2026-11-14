@@ -1,3 +1,4 @@
+import { Vec3 } from "../engine/math/Vec3";
 import { FixedClock } from "../game/FixedClock";
 import { Rally } from "../game/Rally";
 import { RallyView } from "../game/RallyView";
@@ -45,6 +46,15 @@ export class GameLoop {
     private readonly Listeners: RallyEvents[] = [];
     private ToldPoint: unknown = null;
 
+    /**
+     * In a match, another player's stroke reaches this machine late, and the ball jumps from
+     * where it was flown here onto the stroke's true path. Gap is what is left of that jump, m:
+     * the drawn ball starts where it was and eases onto the true one over about GapTau real s.
+     */
+    private static readonly GapTau = 0.045;
+    private Gap = Vec3.Zero;
+    private ToldCorrection = 0;
+
     constructor(private Game: Rally,
                 private readonly Hand: CursorFollower,
                 private readonly World: TableScene,
@@ -90,6 +100,7 @@ export class GameLoop {
             this.MarkContacts();
             this.TellStep();
         }
+        this.Gap = this.Gap.Scale(Math.exp(-RealSeconds / GameLoop.GapTau));
         const Drawn = RallyView.Between(this.Before, this.After, this.Clock.Alpha());
         this.Draw(Drawn);
         // After drawing, so a mark riding on a racket follows where it was just drawn.
@@ -106,6 +117,8 @@ export class GameLoop {
         this.Game = Next;
         this.Before = this.After = Next.View();
         this.ToldPoint = Next.LastPoint();
+        this.ToldCorrection = Next.LastCorrection()?.Serial ?? 0;
+        this.Gap = Vec3.Zero;
         this.World.SetRacketCount(this.After.Rackets.length);
     }
 
@@ -176,17 +189,24 @@ export class GameLoop {
 
     /** Tells the listeners what the last step's ball struck, a new ball, and a new call. */
     private TellStep(): void {
-        if (this.Listeners.length === 0) return;
         const Struck = this.Game.LastStep(), Ball = this.After.Ball, At = Ball.Position;
         const SpeedChange = Ball.Velocity.Minus(this.Before.Ball.Velocity).Length();
         // A ball that jumped further than any flight covers in one step is a new one.
-        const Fresh = At.Minus(this.Before.Ball.Position).Length() > GameLoop.Jump;
+        const Remote = this.Game.LastCorrection();
+        const Fresh = At.Minus(this.Before.Ball.Position).Length() > GameLoop.Jump && (Remote === null || Remote.Serial === this.ToldCorrection);
         for (const Each of this.Listeners) {
             if (Fresh) Each.NewBall?.(Ball);
             if (Struck.Table) Each.Bounce?.(At, SpeedChange, Ball);
             if (Struck.Racket >= 0) Each.Hit?.(Struck.Racket, At, SpeedChange, Ball);
             if (Struck.Net) Each.Net?.(At, SpeedChange);
             if (Struck.Floor) Each.Floor?.(At, SpeedChange);
+        }
+        // Another machine's stroke arrives as a correction, not a contact here: it is told as that racket's hit.
+        const Corrected = this.Game.LastCorrection();
+        if (Corrected !== null && Corrected.Serial !== this.ToldCorrection) {
+            this.ToldCorrection = Corrected.Serial;
+            this.Gap = Corrected.From.Minus(Corrected.To);
+            for (const Each of this.Listeners) Each.Hit?.(Rally.OpponentRacket, Corrected.To, SpeedChange, Ball);
         }
         const Called = this.Game.LastPoint();
         if (Called !== this.ToldPoint) {
@@ -197,7 +217,7 @@ export class GameLoop {
 
     private Draw(View: RallyView): void {
         View.Rackets.forEach((Each, Index) => this.World.PoseRacket(Index, Each.Centre, Each.Normal, Each.Roll));
-        this.World.PlaceBall(View.Ball.Position);
+        this.World.PlaceBall(View.Ball.Position.Plus(this.Gap));
         this.Hud.ShowSpin(SpinLine.Describe(View.Ball));
         this.Hud.ShowScore(this.Game.Score(), this.Game.LastPoint());
     }
