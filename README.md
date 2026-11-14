@@ -87,6 +87,8 @@ In a rally, the ball must cross the net and bounce once on the opponent's side. 
 
 Browsers can't open raw network sockets, so both players connect through a small relay server that passes their messages along. It knows nothing about table tennis: each player's own browser runs the game and decides its own hits.
 
+The match starts through the relay, then the two browsers try to connect straight to each other (WebRTC, using public STUN servers) and switch over without a pause when that works; the Match page shows `PING 34 ms · DIRECT` or `· RELAY`. If a direct connection can't be made (some office and mobile networks), or drops, the match simply stays on the relay. The relay answers `/health` with how many rooms and seats are in use.
+
 **On the same network** (same home or school Wi-Fi), one machine runs both the game and the relay:
 
 1. Build the game and start the relay:

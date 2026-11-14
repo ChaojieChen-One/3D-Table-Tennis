@@ -75,7 +75,7 @@ export class GameLoop {
         // Footwork is the camera: the player stands where it is and faces the way it looks.
         this.Hand.SetStance(this.Rig.Eye(), this.Rig.Looking());
         if (this.Net !== null) {
-            this.Net.Pump(Seconds);
+            this.Net.Pump(Seconds, RealSeconds);
             if (!this.Net.Connected()) {
                 this.Net = null;
                 this.ShowSpeed();

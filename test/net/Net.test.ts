@@ -83,6 +83,29 @@ test("AHitArrivesMirroredAndLivesAsTheRemoteSidesStroke", () => {
     Check(SameBall(NetMirror.Ball(Struck), SeenAtHost), `sent ${Struck.Position} moving ${Struck.Velocity}; host now has ${SeenAtHost.Position} moving ${SeenAtHost.Velocity}`);
 });
 
+test("ARemoteHitReportsTheJumpItMadeForWhoeverDrawsTheBall", () => {
+    // The host's ball has flown on past the far racket; the stroke that then arrives puts it back
+    // on the true path. The correction is that jump: from where the ball was to where the stroke left it.
+    let Now = 0;
+    const [HostLink, JoinLink] = MemoryTransport.Pair(() => Now, 0, 0);
+    const Host = new End(HostLink, true);
+    const None = Host.Game.LastCorrection();
+    Host.Game.Launch(new BallState(new Vec3(0, 0.3, -1.3), new Vec3(0, 0, -4), Vec3.Zero), "Near");
+    for (let Steps = 0; Steps < 24; Steps++) { Now += Step; Host.Advance(); }
+    const Ghost = Host.Game.View().Ball.Position;
+    const Struck = new BallState(new Vec3(0.1, 0.3, 1.4), new Vec3(0, 1, -5), Vec3.Zero);
+    const Strike = () => { JoinLink.Send({ Kind: "Hit", Ball: Struck, At: 0 }); Now += Step; Host.Session.Pump(Step); };
+    Strike();
+    const First = Host.Game.LastCorrection();
+    Strike();
+    const Second = Host.Game.LastCorrection();
+    const True = NetMirror.Ball(Struck).Position;
+    expect(None, "a correction before any stroke").toBeNull();
+    Check(First !== null && Second !== null && First.From.Minus(Ghost).Length() < 1e-9 && First.To.Minus(True).Length() < 1e-9
+          && Second.Serial === First.Serial + 1 && Second.From.Minus(True).Length() < 1e-9,
+          `the ball had flown on to ${Ghost}; the stroke put it at ${True}; correction ${First?.Serial} runs from ${First?.From} to ${First?.To}, and the next is ${Second?.Serial}`);
+});
+
 test("APoseArrivesMirroredAtTheRemoteRacket", () => {
     let Now = 0;
     const [HostLink, JoinLink] = MemoryTransport.Pair(() => Now, 0, 0);
@@ -154,6 +177,21 @@ test("TwoPlayersMeetInARoomAndTheirLinesCrossTheRelay", async () => {
     const Hellos = AtHost.filter(Each => Each.Kind === "Hello").map(Each => Each.Kind === "Hello" ? `${Each.Name}@${Each.From}` : "");
     Check(Host.Room().Seat === 0 && Guest.Room().Seat === 1 && Hellos.includes("bo@1"),
           `host seat ${Host.Room().Seat}, guest seat ${Guest.Room().Seat}; host heard ${AtHost.map(Each => Each.Kind).join(",")} (${Hellos.join(",")}); guest heard ${AtGuest.map(Each => Each.Kind).join(",")}`);
+    Host.Close();
+    Guest.Close();
+});
+
+test("TheRelaySaysHowBusyItIsAndDoesNotCompress", async () => {
+    const Host = await WebSocketTransport.Connect(Url, "BUSY", true, "ann");
+    const Guest = await WebSocketTransport.Connect(Url, "BUSY", false, "bo");
+    const Health = await (await fetch(Url.replace("ws:", "http:") + "/health")).json() as { ok: boolean; rooms: number; seats: number };
+    // The browser's side of the handshake: a relay that compressed would answer with the extension it accepted.
+    const Raw = new WebSocket(Url);
+    await new Promise<void>((Opened, Failed) => { Raw.onopen = () => Opened(); Raw.onerror = () => Failed(new Error("no socket")); });
+    const Extensions = Raw.extensions;
+    Raw.close();
+    Check(Health.ok && Health.rooms === 1 && Health.seats === 2 && Extensions === "",
+          `/health with one match on: ${JSON.stringify(Health)}; extensions the relay accepted: "${Extensions}" (none: no per-message deflate)`);
     Host.Close();
     Guest.Close();
 });

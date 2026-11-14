@@ -78,7 +78,20 @@ Only `app` touches the DOM or Three.js; only `server` touches Node.
     referees, spawns each ball (`Spawn`) toward a random end and sends each call (`Point`). A point
     the host wins is held `RemoteGrace` (0.15 game s) in case the other stroke is still coming.
   - Rooms hold 2 to 5 seats; the relay tags every relayed line with the sender's seat (`From`).
-- **`server/relay.ts`**: pairs players by room code and relays lines; serves `dist/` on the same port.
+  - Two clocks: `NetSession.Pump(GameSeconds, RealSeconds)`. The link runs on real time (60 poses
+    and 2 pings a real second, every `At` the sender's real clock); only the hit catch-up crosses
+    over, `CatchUp()` = smoothed one way trip × game speed, capped by `Rally.MostCatchUp`.
+  - `RemoteRacket` plays poses back by snapshot interpolation on real time (`Advance`): a
+    minimum-delay clock offset, a playout delay of one pose interval plus the arrival jitter
+    (100 ms cap), at most 50 ms of extrapolation; a pose no newer than the newest is dropped.
+  - `WebRtcTransport` wraps the relay link and upgrades to a direct one (`RtcPeer`: public STUN, no
+    TURN; signalling is `Signal` lines through the relay, the host offers). Pose/Ping/Pong take the
+    unordered channel when `Path()` is `"direct"`. What must arrive is `Numbered`, always sent via
+    the relay and also down the reliable channel, and handed on once, in order. The path falls
+    back to the relay on silence (1 s), failure, or no connection in 8 s.
+  - `Rally.LastCorrection()` is the ball's jump at the last remote hit, for the renderer to blend.
+- **`server/relay.ts`**: pairs players by room code and relays lines; serves `dist/` on the same
+  port, and `/health` (rooms and seats, JSON).
 - **`src/app`**: the Three.js shell. `main.ts` is the composition root and reads the URL options.
   `GameLoop` (requestAnimationFrame) turns frame time into whole fixed steps. `camera/CameraRig`
   holds the views, orbit/zoom and the follow camera. `input/` maps the mouse (`CursorRay`) and the
