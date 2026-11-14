@@ -4,18 +4,35 @@ import { TableSpec } from "../../engine/Specs";
 import { Vec3 } from "../../engine/math/Vec3";
 import { PlayerGrip } from "../../game/control/PlayerGrip";
 import { RacketPose } from "../../game/control/RacketPose";
-import * as ArenaView from "./ArenaView";
+import { RallyEvents } from "../RallyEvents";
+import { RallyView } from "../../game/RallyView";
+import { Arena } from "./ArenaView";
 import { BallView } from "./BallView";
 import { Impacts } from "./Impacts";
 import { RacketView } from "./RacketView";
+import { Sparks } from "./Sparks";
 
 /**
  * Everything drawn in 3D: the hall, every racket and the ball. Each is posed at a ready stance
  * here, then moved every frame through PoseRacket and PlaceBall. Racket 0 is this machine's player;
- * the rest follow the rally's seats, so a table of four draws four. The scene only reads game
- * state and never changes it.
+ * the rest follow the rally's seats, so a table of four draws four. It listens to the rally
+ * (RallyEvents) for what to throw sparks and light at. The scene only reads game state and never
+ * changes it.
  */
-export class TableScene {
+export class TableScene implements RallyEvents {
+    /** TUNED: a contact that changes the ball's velocity by less than this, m/s, throws no sparks; one this hard throws the most. */
+    private static readonly SparksFrom = 5;
+    private static readonly SparksFull = 16;
+
+    /** TUNED: the flash a hard stroke lights the table with: its brightest, candela, and how long it takes to die, game s. */
+    private static readonly FlashBright = 5;
+    private static readonly FlashLasts = 0.12;
+
+    /** TUNED: the colours of what flies off a contact: the player's strokes warm, the others' cool, the table's pale. */
+    private static readonly Warm = new THREE.Color("#ffb066");
+    private static readonly Cool = new THREE.Color("#8fd2ff");
+    private static readonly Pale = new THREE.Color("#e8f0ff");
+
     /** TUNED: a ready stance, a hand's width above the table and a little behind the end line. */
     private static readonly RacketHeight = 0.20;
     private static readonly RacketBehindEnd = 0.15;
@@ -29,9 +46,15 @@ export class TableScene {
     private readonly Poses: RacketPose[] = [];
     private readonly Ball = new BallView();
     private readonly Contacts = new Impacts();
+    private readonly Flying = new Sparks();
+    private readonly Flash = new THREE.PointLight("#ffd9a8", 0, 2.5, 2);
+    private FlashLeft = 0;
+
+    /** The hall itself, for the graphics settings and the reflections. */
+    readonly Hall = new Arena();
 
     constructor() {
-        this.Root.add(ArenaView.Build(), this.Ball.Root, this.Contacts.Root);
+        this.Root.add(this.Hall.Root, this.Ball.Root, this.Contacts.Root, this.Flying.Root, this.Flash);
         const EndZ = TableSpec.HalfLength + TableScene.RacketBehindEnd;
         const Ready = new Vec3(TableScene.RacketOffCentre, TableScene.RacketHeight, EndZ);
         this.PoseRacket(0, Ready, new Vec3(0, 0, -1), PlayerGrip.Lean(Ready, Vec3.Zero, new Vec3(0, 0, -1)));
@@ -80,4 +103,36 @@ export class TableScene {
 
     /** Ages the impact marks by Seconds of game time; once per frame. */
     Advance(Seconds: number): void { this.Contacts.Advance(Seconds); }
+
+    /** A stroke: sparks along the way the ball left, and a flash, both as strong as the stroke was hard. */
+    Hit(Racket: number, At: Vec3, SpeedChange: number, Ball: BallState): void {
+        const Hard = Math.min(1, (SpeedChange - TableScene.SparksFrom) / (TableScene.SparksFull - TableScene.SparksFrom));
+        if (Hard <= 0) return;
+        const Tint = Racket === 0 ? TableScene.Warm : TableScene.Cool;
+        this.Flying.Burst(At, Ball.Velocity.Normalized(), Math.round(6 + 22 * Hard), 1.2 + 2.6 * Hard, 0.55, Tint, 0.012 + 0.012 * Hard, 0.28);
+        this.Flash.color.copy(Tint);
+        this.Flash.position.set(At.X, At.Y, At.Z);
+        this.FlashLeft = TableScene.FlashLasts * Hard;
+    }
+
+    /** A bounce: a small pale puff off the table, for all but the softest. */
+    Bounce(At: Vec3, SpeedChange: number): void {
+        if (SpeedChange < 3) return;
+        const Hard = Math.min(1, SpeedChange / 10);
+        this.Flying.Burst(new Vec3(At.X, 0.004, At.Z), Vec3.Up, Math.round(3 + 7 * Hard), 0.35 + 0.6 * Hard, 0.75, TableScene.Pale, 0.008, 0.2);
+    }
+
+    /** The net shivers off a few pale specks where the ball touched it. */
+    Net(At: Vec3, SpeedChange: number): void {
+        if (SpeedChange < 1) return;
+        this.Flying.Burst(At, Vec3.Up, 5, 0.5, 0.9, TableScene.Pale, 0.007, 0.22);
+    }
+
+    /** Once a frame: the hall moves on real time (it is watched, not played); what flew off the ball ages with the game. */
+    Frame(RealSeconds: number, GameSeconds: number, _View: RallyView): void {
+        this.Hall.Advance(RealSeconds);
+        this.Flying.Advance(GameSeconds);
+        this.FlashLeft = Math.max(0, this.FlashLeft - GameSeconds);
+        this.Flash.intensity = TableScene.FlashBright * (this.FlashLeft / TableScene.FlashLasts) ** 2;
+    }
 }

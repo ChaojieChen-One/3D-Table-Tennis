@@ -73,10 +73,36 @@ export class CameraRig {
     private Following = true;
     private Coming = true;
 
+    /**
+     * TUNED: the jolt a hard stroke gives the picture: the most the camera is thrown, m, how fast
+     * it trembles, Hz, and how long the tremble takes to die away, s. Small enough that the cursor,
+     * which aims through this camera, moves the racket by well under a ball's width.
+     */
+    private static readonly MostJolt = 0.006;
+    private static readonly JoltHz = 38;
+    private static readonly JoltTau = 0.09;
+
+    /** Where the camera stands, before any jolt: the player's stance. */
+    private Stand = new Vec3(0, 0, 0);
+    private Jolt = 0;
+    private JoltClock = 0;
+
     constructor() { this.Pose(); }
 
     /** Where the camera is. Footwork is the camera: this is where the player stands. */
-    Eye(): Vec3 { const P = this.Camera.position; return new Vec3(P.x, P.y, P.z); }
+    Eye(): Vec3 { return this.Stand; }
+
+    /** Jolts the picture, Strength 0 to 1: a hard stroke felt through the camera. */
+    Kick(Strength: number): void { this.Jolt = Math.max(this.Jolt, Math.max(0, Math.min(1, Strength))); }
+
+    /** Once per frame, on real time: lets a jolt die away. */
+    Settle(RealSeconds: number): void {
+        if (this.Jolt <= 0) return;
+        this.JoltClock += RealSeconds;
+        this.Jolt *= Math.exp(-RealSeconds / CameraRig.JoltTau);
+        if (this.Jolt < 0.01) this.Jolt = 0;
+        this.Pose();
+    }
 
     /** The way the camera looks. */
     Looking(): Vec3 { return this.Pivot.Minus(this.Eye()).Normalized(); }
@@ -182,9 +208,12 @@ export class CameraRig {
     private Pose(): void {
         const Turn = ToRadians(-this.Yaw), Rise = ToRadians(this.Pitch);
         const P = this.Pivot;
-        this.Camera.position.set(P.X + this.Distance * Math.cos(Rise) * Math.sin(Turn),
-                                 P.Y + this.Distance * Math.sin(Rise),
-                                 P.Z + this.Distance * Math.cos(Rise) * Math.cos(Turn));
+        this.Stand = new Vec3(P.X + this.Distance * Math.cos(Rise) * Math.sin(Turn),
+                              P.Y + this.Distance * Math.sin(Rise),
+                              P.Z + this.Distance * Math.cos(Rise) * Math.cos(Turn));
+        // The jolt trembles across and up the picture, never toward the table.
+        const Throw = this.Jolt * CameraRig.MostJolt, Beat = this.JoltClock * CameraRig.JoltHz * 2 * Math.PI;
+        this.Camera.position.set(this.Stand.X + Throw * Math.sin(Beat), this.Stand.Y + Throw * Math.cos(Beat * 1.31), this.Stand.Z);
         this.Camera.up.set(0, 1, 0);
         this.Camera.lookAt(P.X, P.Y, P.Z);
         this.Camera.updateMatrixWorld();

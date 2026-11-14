@@ -45,18 +45,23 @@ function Grained(Base: string, Size: number, Contrast: number): HTMLCanvasElemen
     return Sheet;
 }
 
-/** A quiet satin finish, the Java edition's teal. */
-export function Table(): THREE.MeshStandardMaterial {
-    return new THREE.MeshStandardMaterial({ map: Texture(Grained("#195b5e", 256, 0.03), 4, 6), roughness: 0.55, metalness: 0 });
+/**
+ * The tabletop: the deep blue of a show-court table, matt as the Laws ask ([ITTF] 2.1.3), under
+ * a thin clear coat so the hall's lights and the net lie faintly in it.
+ */
+export function Table(): THREE.MeshPhysicalMaterial {
+    return new THREE.MeshPhysicalMaterial({ map: Texture(Grained("#123c86", 256, 0.035), 4, 6), roughness: 0.46, metalness: 0,
+                                            clearcoat: 0.3, clearcoatRoughness: 0.42 });
 }
 
 export function Solid(Colour: string, Roughness = 0.6, Metalness = 0): THREE.MeshStandardMaterial {
     return new THREE.MeshStandardMaterial({ color: Colour, roughness: Roughness, metalness: Metalness });
 }
 
-/** Pimpled-in rubber: a soft sheen, never a mirror. */
-export function Rubber(Colour: string): THREE.MeshStandardMaterial {
-    return new THREE.MeshStandardMaterial({ map: Texture(Grained(Colour, 128, 0.05)), roughness: 0.62, metalness: 0 });
+/** Pimpled-in rubber: a soft sheen across its tacky top sheet, never a mirror. */
+export function Rubber(Colour: string): THREE.MeshPhysicalMaterial {
+    return new THREE.MeshPhysicalMaterial({ map: Texture(Grained(Colour, 128, 0.05)), roughness: 0.5, metalness: 0,
+                                            sheen: 0.6, sheenRoughness: 0.45, sheenColor: new THREE.Color("#ffffff") });
 }
 
 /** Blade wood, with a gentle warp in its grain. */
@@ -130,6 +135,57 @@ export function Sign(Words: string, Ink: string, Back: string, Width = 1024, Hei
     const Map = new THREE.CanvasTexture(Sheet);
     Map.colorSpace = THREE.SRGBColorSpace;
     return new THREE.MeshStandardMaterial({ map: Map, roughness: 0.8, emissive: "#ffffff", emissiveMap: Map, emissiveIntensity: Glow });
+}
+
+/**
+ * A run of LED perimeter board, Metres long, as one strip of texture: a dark blue field with the
+ * event's words spaced along it. Its light is its own (a basic material), kept well under white so
+ * the ball still reads against it. TUNED colours.
+ */
+export function Led(Words: string[]): THREE.CanvasTexture {
+    const Width = 4096, Height = 128;
+    const [Sheet, Pen] = Canvas(Width, Height);
+    const Field = Pen.createLinearGradient(0, 0, 0, Height);
+    Field.addColorStop(0, "#0a2a66");
+    Field.addColorStop(1, "#061a44");
+    Pen.fillStyle = Field;
+    Pen.fillRect(0, 0, Width, Height);
+    // The diodes' rows: faint dark lines, which is what makes a board read as lit rather than printed.
+    Pen.fillStyle = "rgba(0, 0, 0, 0.22)";
+    for (let Y = 0; Y < Height; Y += 4) Pen.fillRect(0, Y, Width, 1);
+    Pen.textAlign = "center";
+    Pen.textBaseline = "middle";
+    const Slot = Width / Words.length;
+    Words.forEach((Each, Index) => {
+        const X = Slot * (Index + 0.5);
+        Pen.font = `700 ${Math.round(Height * 0.44)}px "Barlow Condensed", "Arial Narrow", "Segoe UI", system-ui, sans-serif`;
+        Pen.fillStyle = Index % 2 === 0 ? "#8fc4ee" : "#e09a78";
+        Pen.fillText(Each, X, Height / 2 + 3);
+        // A ball between the words.
+        Pen.fillStyle = "#a9c6e0";
+        Pen.beginPath();
+        Pen.arc(Slot * (Index + 1) % Width, Height / 2, Height * 0.1, 0, Math.PI * 2);
+        Pen.fill();
+    });
+    const Map = Texture(Sheet);
+    Map.wrapT = THREE.ClampToEdgeWrapping;
+    return Map;
+}
+
+/** A soft round glow, white at the middle and clear at the edge, for halos, sparks and flashes. */
+export function Glow(): THREE.CanvasTexture {
+    const Size = 128;
+    const [Sheet, Pen] = Canvas(Size, Size);
+    const Fall = Pen.createRadialGradient(Size / 2, Size / 2, 0, Size / 2, Size / 2, Size / 2);
+    Fall.addColorStop(0, "rgba(255, 255, 255, 1)");
+    Fall.addColorStop(0.25, "rgba(255, 255, 255, 0.55)");
+    Fall.addColorStop(0.6, "rgba(255, 255, 255, 0.12)");
+    Fall.addColorStop(1, "rgba(255, 255, 255, 0)");
+    Pen.fillStyle = Fall;
+    Pen.fillRect(0, 0, Size, Size);
+    const Map = new THREE.CanvasTexture(Sheet);
+    Map.colorSpace = THREE.SRGBColorSpace;
+    return Map;
 }
 
 export { Canvas };

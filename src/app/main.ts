@@ -10,8 +10,10 @@ import { WebSocketTransport } from "../net/WebSocketTransport";
 import { CameraRig } from "./camera/CameraRig";
 import { CourtOverlay } from "./CourtOverlay";
 import { GameLoop } from "./GameLoop";
+import { Graphics, Qualities, Quality } from "./Graphics";
 import { RacketControl } from "./input/RacketControl";
 import { MatchPage } from "./MatchPage";
+import * as Art from "./scene/Art";
 import { TableScene } from "./scene/TableScene";
 import "./style.css";
 
@@ -28,26 +30,28 @@ const Numbers = (Name: string): number[] | null => {
     return Parts.every(Number.isFinite) ? Parts : null;
 };
 
-const Stage = document.getElementById("stage")!;
-const Renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
-Renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-Renderer.shadowMap.enabled = true;
-Renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-Renderer.outputColorSpace = THREE.SRGBColorSpace;
-Renderer.toneMapping = THREE.ACESFilmicToneMapping;
-Renderer.toneMappingExposure = 1.05;
-Stage.append(Renderer.domElement);
+/** TUNED: a stroke of the player's that changes the ball's velocity by this much, m/s, begins to jolt the camera; by this much, jolts it fully. */
+const JoltFrom = 7, JoltFull = 18;
 
+const Stage = document.getElementById("stage")!;
 const World = new TableScene();
 const Scene = new THREE.Scene();
-Scene.background = new THREE.Color("#17232e");
+Scene.background = new THREE.Color("#05070b");
 Scene.add(World.Root);
 
 const Rig = new CameraRig();
 Rig.View(Options.get("view") ?? "player");
 // "?follow=off" keeps the player view still instead of following the rally.
 if (Options.get("follow") === "off") Rig.SetFollowing(false);
+
+const Gfx = new Graphics(Stage, Scene, Rig.Camera, World.Hall.Key);
+const Renderer = Gfx.Renderer;
 Rig.Attach(Renderer.domElement);
+// "?quality=low|medium|high|ultra" pins the graphics quality; without it the frame rate picks.
+const AskedQuality = Options.get("quality");
+if (AskedQuality !== null && (Qualities as readonly string[]).includes(AskedQuality)) Gfx.SetQuality(AskedQuality as Quality);
+// The hall's lights lie in the table and the ball once its images are in.
+void Art.Ready().then(() => Gfx.Surroundings(World.Hall.Surround));
 
 const Hand = new CursorFollower(ReachEnvelope.Neutral);
 const Racket = new RacketControl(Hand, Rig.Camera);
@@ -91,16 +95,17 @@ const Hud = new CourtOverlay(Rig, {
 if (Options.has("settings")) Hud.ShowDisplaySettings();
 document.getElementById("ui")!.append(Hud.Root);
 
-function Resize(): void {
-    const Width = Stage.clientWidth, Height = Stage.clientHeight;
-    Renderer.setSize(Width, Height, false);
-    Rig.Camera.aspect = Width / Math.max(1, Height);
-    Rig.Camera.updateProjectionMatrix();
-}
-window.addEventListener("resize", Resize);
-Resize();
+window.addEventListener("resize", () => Gfx.Resize());
+Gfx.Resize();
 
-const Loop = new GameLoop(Game, Hand, World, Rig, Hud, () => Renderer.render(Scene, Rig.Camera));
+let FrameSeconds = 0;
+const Loop = new GameLoop(Game, Hand, World, Rig, Hud, () => Gfx.Render(FrameSeconds));
+// The scene throws its sparks at what the rally reports; a hard stroke of the player's own jolts the camera.
+Loop.Listen(World);
+Loop.Listen({
+    Hit: (Racket, _At, SpeedChange) => { if (Racket === Rally.PlayerRacket) Rig.Kick((SpeedChange - JoltFrom) / (JoltFull - JoltFrom)); },
+    Frame: RealSeconds => { FrameSeconds = RealSeconds; Rig.Settle(RealSeconds); },
+});
 // "speed=0.8" sets the game speed, game seconds per real second; [ and ] step it while playing.
 const Speed = Options.get("speed");
 if (Speed !== null) Loop.SetSpeed(Number(Speed));
@@ -161,4 +166,4 @@ window.addEventListener("blur", () => Racket.ReleaseAll());
 
 Loop.Start();
 // For automated checks (Playwright): the loop and rally, read-only by convention.
-(window as unknown as { TableTennis: unknown }).TableTennis = { Loop, Rig, Hand };
+(window as unknown as { TableTennis: unknown }).TableTennis = { Loop, Rig, Hand, Gfx };
