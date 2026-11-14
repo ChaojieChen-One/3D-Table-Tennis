@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { Vec3 } from "../engine/math/Vec3";
 import { CursorFollower } from "../game/control/CursorFollower";
 import { ReachEnvelope } from "../game/control/ReachEnvelope";
+import { LevelNamed } from "../game/Level";
 import { Opponent } from "../game/Opponent";
 import { Rally } from "../game/Rally";
 import { RemoteRacket } from "../game/RemoteRacket";
@@ -56,8 +57,10 @@ const Racket = new RacketControl(Hand, Rig.Camera);
  * The hitting helps as the URL sets them, for a practice rally and a match alike. "lift=off"
  * switches off the help that raises the racket to a bounced ball's height; "assist=off" leaves the
  * player's contact to the engine alone; "aimhelp=0.8" turns on the help that turns the face.
+ * Points start with a serve; "serve=off" goes back to fed balls (the drills, in practice).
  */
 function Configured(Game: Rally): Rally {
+    Game.SetServing(Options.get("serve") !== "off");
     if (Options.get("lift") === "off") Game.SetAutoLift(false);
     if (Options.get("assist") === "off") Game.SetShotAssist(false);
     const AimHelp = Options.get("aimhelp");
@@ -65,7 +68,9 @@ function Configured(Game: Rally): Rally {
     return Game;
 }
 
-const Game = Configured(new Rally(Hand));
+// "level=rookie|club|pro|champion" sets how well the computer plays (pro by default).
+const Computer = () => new Opponent(LevelNamed(Options.get("level")));
+const Game = Configured(new Rally(Hand, Computer()));
 // Repeatable visual checks: "ball=x,y,z" in metres holds the ball still there, unfed.
 const HeldBall = Numbers("ball");
 if (HeldBall !== null && HeldBall.length === 3) Game.Hold(new Vec3(HeldBall[0], HeldBall[1], HeldBall[2]));
@@ -102,12 +107,14 @@ Resize();
 
 const Loop = new GameLoop(Game, Hand, World, Rig, Hud, () => Renderer.render(Scene, Rig.Camera));
 // "speed=0.8" sets the game speed, game seconds per real second; [ and ] step it while playing.
+// A double-click tosses the ball when it is the player's serve.
+Racket.SetOnToss(() => Loop.Current().Toss());
 const Speed = Options.get("speed");
 if (Speed !== null) Loop.SetSpeed(Number(Speed));
 
 /** Back to the computer, from love-all. */
 function BackToPractice(): void {
-    Loop.SetGame(Configured(new Rally(Hand)));
+    Loop.SetGame(Configured(new Rally(Hand, Computer())));
     Hud.SetOpponent("CPU", "Computer");
 }
 
@@ -146,7 +153,7 @@ window.addEventListener("keydown", Event => {
         case "Digit7": Rig.View("hall"); break;
         case "Digit8": Rig.View("racket"); break;
         case "KeyH": Hud.ToggleVisible(); break;
-        // In a match the host puts every ball in play, so a new ball on demand is practice only.
+        // In a match the host puts every ball in play, so a new ball (or the next serve) on demand is practice only.
         case "Space": if (!Loop.Online()) Loop.Current().FeedNow(); Event.preventDefault(); break;
         case "KeyM": Event.preventDefault(); Racket.ReleaseAll(); Page.Open(); break;
         case "BracketLeft": Loop.StepSpeed(-1); break;

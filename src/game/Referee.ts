@@ -136,7 +136,7 @@ export class Referee {
         let Now: Point | null = null;
         const Court = SideAt(At.Z);
         if (this.Service === "Tossed") {
-            Now = this.JudgeToss(Step, Gone);
+            Now = this.JudgeToss(Step);   // a toss is all but still at its top: only what it touches ends it
         } else if (this.Service === "Struck") {
             Now = this.JudgeService(Step, Court, Gone);
         } else {
@@ -156,7 +156,7 @@ export class Referee {
     }
 
     /** The toss in the air: it must touch nothing until the server strikes it, falling, having risen LeastToss. */
-    private JudgeToss(Step: CollisionResult, Gone: boolean): Point | null {
+    private JudgeToss(Step: CollisionResult): Point | null {
         const At = Step.Ball.Position;
         const WasFalling = this.Falling;
         this.Falling = Step.Ball.Velocity.Y < 0;
@@ -176,7 +176,6 @@ export class Referee {
         this.TossPeak = Math.max(this.TossPeak, At.Y);
         if (Step.Table) return this.Fault("2.6.2", "the toss touched the table before it was struck");
         if (Step.Floor) return this.Fault("2.6.2", "the toss was not struck before it touched the floor");
-        if (Gone) return this.Fault("2.6.2", "the toss was not struck");
         return null;
     }
 

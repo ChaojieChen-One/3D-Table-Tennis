@@ -11,7 +11,8 @@ import { Side } from "./Side";
  * vertical angle is bisected, with Flight itself, until bounce 1 lands inside the zone. Strength is
  * 100%: every serve that touches the racket is corrected this way. After that the assist is off:
  * whether the ball then carries on over the net depends on the server's own power alone, so a weak
- * serve still faults. Serving itself is not built yet; this waits for it.
+ * serve still faults. Rally applies it to the player's struck service, unless the shot assist is
+ * off, and Serves to the computer's.
  */
 
 /** [spec]: about 5 cm short of each edge of the zone, m. */

@@ -12,6 +12,9 @@ export interface RacketAgent {
     Follow(Ball: BallState, Seconds: number): void;
 
     Pose(): RacketPose;
+
+    /** Told as its service leaves its racket, by a Rally that serves for it, so it can be seen to swing; optional. */
+    Served?(): void;
 }
 
 /** The other end's view: a half turn about the vertical, so (x, y, z) -> (-x, y, -z). */
@@ -41,4 +44,6 @@ export class Mirrored implements RacketAgent {
     Follow(Ball: BallState, Seconds: number): void { this.Inner.Follow(HalfTurnBall(Ball), Seconds); }
 
     Pose(): RacketPose { return HalfTurnPose(this.Inner.Pose()); }
+
+    Served(): void { this.Inner.Served?.(); }
 }

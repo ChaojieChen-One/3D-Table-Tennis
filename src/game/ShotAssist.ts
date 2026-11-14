@@ -49,6 +49,15 @@ export class ShotAssist {
     private static readonly Halvings = 12;
     private static readonly AcrossHalvings = 20;
 
+    /**
+     * TUNED: a serve's forward speed off a still racket, m/s, and what each m/s of forward push
+     * adds. A serve bounces on the server's own court first, so it wants less pace than a rally
+     * stroke: an ordinary 3 m/s push lands mid-court, a soft one meets the net and the racket's
+     * full 6 m/s goes long.
+     */
+    static readonly ServePaceAtRest = 4.0;
+    static readonly ServePacePerPush = 0.75;
+
     /** TUNED: the pace, m/s, whose arc lands mid-court; a faster ball on the same arc carries further. */
     static readonly RefPace = 7.1;
 
@@ -146,6 +155,35 @@ export class ShotAssist {
             Turn += Miss;
             Result = ShotAssist.Turned(Powered, Turn);
         }
+        this.LastShot = { AimedDegrees: Wanted, PhysicalDegrees: Physical, Pace: Result.Velocity.Length(), Clean };
+        return Result;
+    }
+
+    /**
+     * The ball leaving the player's racket as a service, read as Shoot reads a stroke: the
+     * direction follows the held A/D and the swipe, the forward speed the push (ServePaceAtRest and
+     * ServePacePerPush), and the spin is the contact's, brushed by the whole sideways motion. The
+     * rise or fall is the contact's own: nothing here places a bounce. The Rally passes the result
+     * to ServeAssist, which alone sees that the first bounce is on the server's court.
+     */
+    Serve(Incoming: BallState, Struck: BallState, Racket: RacketPose, Moving: Vec3, KeyTilt: number): BallState {
+        const Velocity = Struck.Velocity;
+        if (Velocity.Z >= 0) return Struck;
+        const Physical = ShotAssist.Heading(Velocity);
+        const Aimed = Clamp(KeyTilt * ShotAssist.KeyAim + Moving.X * ShotAssist.SwipeAim, -ShotAssist.MostAim, ShotAssist.MostAim);
+        const Clean = ShotAssist.ContactQuality(Incoming, Struck.Position, Racket);
+        const Steer = ShotAssist.AssistFloor + (1 - ShotAssist.AssistFloor) * Clean;
+        const Wanted = Physical + (Aimed - Physical) * Steer;
+        const Pace = ShotAssist.ServePaceAtRest + ShotAssist.ServePacePerPush * Math.max(0, -Moving.Z);
+        const Brush = Swing.Read(Moving, ShotAssist.Ahead).PlusScaled(ShotAssist.Right, Moving.X * (1 - Swing.SideShare));
+        const Spun = Contact.Bounce(Incoming, Racket.Normal, Brush, Surface.Racket).Spin;
+        // A falling ball caught on the blade's rim is brushed to a spin no swing gives; a serve's spin is held to the swipe's most.
+        const Top = Clamp(SpinVector.TopRevs(Velocity, Spun), -ShotAssist.MaxSidespin, ShotAssist.MaxSidespin);
+        const Side = Clamp(SpinVector.SideRevs(Spun), -ShotAssist.MaxSidespin, ShotAssist.MaxSidespin);
+        const Planned = ShotAssist.Ahead.Scale(Pace).PlusScaled(Vec3.Up, Velocity.Y);
+        const Powered = new BallState(Struck.Position, Vec3.Lerp(new Vec3(0, Velocity.Y, -Math.hypot(Velocity.X, Velocity.Z)), Planned, Steer),
+                                      Vec3.Lerp(ShotAssist.Turned(Struck, -Physical).Spin, SpinVector.Of(Planned, Top, Side), Steer));
+        const Result = ShotAssist.Turned(Powered, Wanted);
         this.LastShot = { AimedDegrees: Wanted, PhysicalDegrees: Physical, Pace: Result.Velocity.Length(), Clean };
         return Result;
     }
