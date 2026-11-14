@@ -10,7 +10,13 @@ export interface Transport {
     Poll(): Message[];
     Connected(): boolean;
     Close(): void;
+
+    /** Which way the messages are going now; a transport with only one way need not say. */
+    Path?(): LinkPath;
 }
+
+/** Through the relay, or straight to the other machine. */
+export type LinkPath = "relay" | "direct";
 
 /**
  * Two transports joined in memory, for tests and for a same-page match: each line goes through the
