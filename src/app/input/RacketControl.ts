@@ -8,14 +8,24 @@ import { FaceKeys } from "./FaceKeys";
 /**
  * The mouse and the face keys drive the player's racket. The cursor aims on the hitting plane; a
  * left-button drag belongs to the camera instead. Only a cursor that moved re-aims, so orbiting or
- * zooming under a still mouse leaves the racket where it is.
+ * zooming under a still mouse leaves the racket where it is. A double-click is the serve's toss:
+ * it is passed to whoever SetOnToss names (the rally in play), and does nothing when it is not the
+ * player's ball to toss.
  */
 export class RacketControl {
     private readonly Keys = new FaceKeys();
+    private OnToss: () => void = () => {};
 
     constructor(private readonly Hand: CursorFollower, private readonly Camera: THREE.PerspectiveCamera) {}
 
+    /** Told each double-click on the court: the player's toss. */
+    SetOnToss(Listener: () => void): void { this.OnToss = Listener; }
+
     Attach(Surface: HTMLElement): void {
+        Surface.addEventListener("dblclick", Event => {
+            Event.preventDefault();
+            this.OnToss();
+        });
         Surface.addEventListener("pointermove", Event => {
             if (CameraRig.IsOrbiting(Event)) return;
             const Box = Surface.getBoundingClientRect();

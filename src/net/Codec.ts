@@ -6,7 +6,7 @@ import { Message } from "./Message";
 
 /**
  * A Message as one line of plain text, space separated: simple enough to read in a packet capture,
- * and small enough that a pose at 30 Hz costs nothing. Every number is a plain double, written to
+ * and small enough that a pose at 60 Hz costs nothing. Every number is a plain double, written to
  * six places as the Java edition wrote them.
  */
 
@@ -22,8 +22,13 @@ export function Encode(Msg: Message): string {
         case "Spawn": return `SPAWN ${B(Msg.Ball)} ${Msg.Striker}`;
         // The reason goes last, since it has spaces of its own; it runs to the end of the line.
         case "Point": return `POINT ${Msg.Call.Winner ?? "LET"} ${Msg.Call.Template.replace(/\n/g, " ")}`;
+        case "Serve": return `SERVE ${Msg.Server}`;
+        case "Toss": return `TOSS ${B(Msg.Ball)} ${N(Msg.At)}`;
         case "Ping": return `PING ${N(Msg.At)}`;
         case "Pong": return `PONG ${N(Msg.At)}`;
+        case "Signal": return `SIGNAL ${Msg.Part} ${Msg.Of} ${Msg.Text}`;
+        // The wrapped line goes last and runs to the end, as a POINT's reason does.
+        case "Numbered": return `SEQ ${Msg.Seq} ${Encode(Msg.Inner)}`;
     }
 }
 
@@ -50,8 +55,16 @@ export function Decode(Line: string): Message {
             if (Parts === null) throw new Error("Unreadable message: " + Line);
             return { Kind: "Point", Call: new Point(Parts[1] === "LET" ? null : SideOf(Parts[1]), Parts[2]) };
         }
+        case "SERVE": return { Kind: "Serve", Server: SideOf(Words[1]) };
+        case "TOSS": return { Kind: "Toss", Ball: Ball(), At: D(10) };
         case "PING": return { Kind: "Ping", At: D(1) };
         case "PONG": return { Kind: "Pong", At: D(1) };
+        case "SIGNAL": return { Kind: "Signal", Part: D(1), Of: D(2), Text: Words[3] ?? "" };
+        case "SEQ": {
+            const Parts = Line.trim().match(/^SEQ\s+(\d+)\s+(.*)$/);
+            if (Parts === null) throw new Error("Unreadable message: " + Line);
+            return { Kind: "Numbered", Seq: Number(Parts[1]), Inner: Decode(Parts[2]) };
+        }
         default: throw new Error("Unreadable message: " + Line);
     }
 }

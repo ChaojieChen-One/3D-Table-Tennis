@@ -6,6 +6,7 @@ import { Clamp, ToRadians } from "../engine/math/Numeric";
 import { Vec3 } from "../engine/math/Vec3";
 import { Aiming } from "./Aiming";
 import { RacketPose } from "./control/RacketPose";
+import { DefaultLevel, Level } from "./Level";
 import { RacketAgent } from "./RacketAgent";
 
 /**
@@ -17,25 +18,23 @@ import { RacketAgent } from "./RacketAgent";
  * tries face angles through the engine's own contact and flight (Aiming) until one lands the
  * return on its target. So it answers spin by its effect, whatever the spin, and the stroke is
  * then played for real: nothing about the ball is set by hand.
+ *
+ * How well it does all this is its Level: how soon it reacts, how fast it moves, how firmly it
+ * swings, where it places the ball, how often it attacks and how far its face strays from its aim.
+ * The default level is the computer as it has always played, and draws nothing at random.
  */
 export class Opponent implements RacketAgent {
     /** Where it stands: a quarter of a metre behind its end line. */
     static readonly StandZ = -(TableSpec.HalfLength + 0.25);
 
-    /** TUNED: the forward speed of its usual swing, m/s; a sweep over player shots found faster swings sent more long. */
-    static readonly SwingSpeed = 2.0;
-
-    /** TUNED: the swings it tries in turn, m/s: firmer only when the usual one cannot get a low or dead ball back. */
-    private static readonly SwingSpeeds = [Opponent.SwingSpeed, 3.0, 4.5];
+    /** TUNED: the forward speed of the default level's usual swing, m/s; a sweep over player shots found faster swings sent more long. */
+    static readonly SwingSpeed = DefaultLevel.SwingSpeeds[0];
 
     /** Its grip, as it has always looked: the handle 45 degrees to its right. */
     static readonly Roll = ToRadians(45);
 
     /** It strikes toward the player. */
     private static readonly Toward = new Vec3(0, 0, 1);
-
-    /** TUNED: where its returns land, in turn: left, right and middle of the player's half, at mid depth. */
-    private static readonly Targets = [new Vec3(-0.35, 0, 0.85), new Vec3(0.35, 0, 0.85), new Vec3(0, 0, 0.85)];
 
     /** It aims when the ball is this close in front of it, m: soon enough to foresee a bounce on its side still to come. */
     private static readonly AimFrom = 0.8;
@@ -68,11 +67,14 @@ export class Opponent implements RacketAgent {
     /** The longest it looks ahead for the ball to reach it, s. */
     private static readonly LongestLook = 1.5;
 
-    /** TUNED: how long after a ball turns toward it before it starts to move, s. */
-    static readonly ReactionTime = 0.25;
+    /** TUNED: how long after a ball turns toward it before the default level starts to move, s. */
+    static readonly ReactionTime = DefaultLevel.ReactionTime;
 
-    /** TUNED: the fastest its racket moves across and up or down, m/s. */
-    static readonly MoveSpeed = 2.0;
+    /** TUNED: the fastest the default level's racket moves across and up or down, m/s. */
+    static readonly MoveSpeed = DefaultLevel.MoveSpeed;
+
+    /** TUNED: how long its racket follows through after its service leaves it, s: seen, never felt, since the served ball is already away. */
+    private static readonly ServeSwing = 0.08;
 
     /** It looks again at where it will meet the ball every this many steps, as its read of the ball sharpens. */
     private static readonly LookEvery = 24;
@@ -83,7 +85,7 @@ export class Opponent implements RacketAgent {
 
     private Centre = new Vec3(0, 0.2, Opponent.StandZ);
     private Face = Opponent.Ready;
-    private Swing = Opponent.SwingSpeed;
+    private Swing: number;
     private Aimed = false;
     private Placed = false;
     private NextTarget = 0;
@@ -98,6 +100,23 @@ export class Opponent implements RacketAgent {
 
     /** Where it waits for this ball: its stand, or stepped in to meet a short one. */
     private Home = Opponent.StandZ;
+
+    /** How much of its service's follow-through is left, s. */
+    private Serving = 0;
+
+    /**
+     * The computer playing at Skill. Random draws its attacks and its aim's scatter, evenly from
+     * 0 up to 1; a level with neither (the default) never calls it.
+     */
+    constructor(private readonly Skill: Level = DefaultLevel, private readonly Random: () => number = Math.random) {
+        this.Swing = Skill.SwingSpeeds[0];
+    }
+
+    /** The level it plays at. */
+    Playing(): Level { return this.Skill; }
+
+    /** Its service has just left its racket: it follows through for ServeSwing. */
+    Served(): void { this.Serving = Opponent.ServeSwing; }
 
     /**
      * Moves for one step of Seconds: x and y toward where it will meet the ball, at MoveSpeed and
@@ -117,7 +136,7 @@ export class Opponent implements RacketAgent {
             this.ToY = Opponent.ReadyY;
         } else {
             this.Coming += Seconds;
-            if (this.Coming >= Opponent.ReactionTime && ++this.SinceLook >= Opponent.LookEvery) {
+            if (this.Coming >= this.Skill.ReactionTime && ++this.SinceLook >= Opponent.LookEvery) {
                 this.SinceLook = 0;
                 const Meets = Opponent.Meeting(Ball, Z, this.Home, this.Swing, Seconds);
                 if (Meets !== null) {
@@ -130,14 +149,15 @@ export class Opponent implements RacketAgent {
                 this.Placed = true;
             }
             if (!this.Aimed && At.Z > Z && At.Z - Z < Opponent.AimFrom) {
-                this.Face = this.Aim(Ball, Z, this.Home, Opponent.Targets[this.NextTarget++ % Opponent.Targets.length], Seconds);
+                this.Face = this.Aim(Ball, Z, this.Home, this.Skill.Targets[this.NextTarget++ % this.Skill.Targets.length], Seconds);
                 this.Aimed = true;
             }
         }
         const Arriving = Incoming && At.Z > Z && At.Z - Z < Opponent.SwingFrom;
-        if (Arriving) Z = Math.min(Z + this.Swing * Seconds, this.Home + Opponent.SwingReach);
+        if (this.Serving > 0) this.Serving -= Seconds;
+        if (Arriving || this.Serving > 0) Z = Math.min(Z + this.Swing * Seconds, this.Home + Opponent.SwingReach);
         else Z = Opponent.Footwork(Z, this.Home, Seconds);
-        const Across = new Vec3(this.Centre.X, this.Centre.Y, 0).MovedToward(new Vec3(this.ToX, this.ToY, 0), Opponent.MoveSpeed * Seconds);
+        const Across = new Vec3(this.Centre.X, this.Centre.Y, 0).MovedToward(new Vec3(this.ToX, this.ToY, 0), this.Skill.MoveSpeed * Seconds);
         this.Centre = new Vec3(Across.X, Across.Y, Z);
     }
 
@@ -178,7 +198,10 @@ export class Opponent implements RacketAgent {
      */
     private Aim(Ball: BallState, RacketZ: number, Home: number, Target: Vec3, Seconds: number): Vec3 {
         let Fallback: Vec3 | null = null;
-        for (const Speed of Opponent.SwingSpeeds) {
+        // An attack tries the firmest swing first; otherwise the usual one, firmer only when it must.
+        const Attacking = this.Skill.Attacks > 0 && this.Random() < this.Skill.Attacks;
+        const Speeds = Attacking ? [...this.Skill.SwingSpeeds].reverse() : this.Skill.SwingSpeeds;
+        for (const Speed of Speeds) {
             const Meeting = Opponent.Meeting(Ball, RacketZ, Home, Speed, Seconds);
             if (Meeting === null) continue;
             const Swing = new Vec3(0, 0, Speed);
@@ -189,10 +212,19 @@ export class Opponent implements RacketAgent {
             }
             if (Aiming.Returns(Meeting, Chosen, Swing, Opponent.Toward, Seconds)) {
                 this.Swing = Speed;
-                return Chosen;
+                return this.Strayed(Chosen);
             }
         }
-        return Fallback === null ? this.Face : Fallback;
+        return Fallback === null ? this.Face : this.Strayed(Fallback);
+    }
+
+    /** Aimed as the level's hand holds it: off by up to AimError degrees, open or closed and to either side. */
+    private Strayed(Aimed: Vec3): Vec3 {
+        const Most = ToRadians(this.Skill.AimError);
+        if (!(Most > 0)) return Aimed;
+        const Open = (this.Random() * 2 - 1) * Most, Across = (this.Random() * 2 - 1) * Most;
+        const Side = Vec3.Up.Cross(Opponent.Toward);
+        return Aimed.PlusScaled(Vec3.Up, Math.tan(Open)).PlusScaled(Side, Math.tan(Across)).Normalized();
     }
 
     /**

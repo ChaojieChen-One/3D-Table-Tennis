@@ -1,4 +1,4 @@
-import { Side } from "./Side";
+import { Other, Side } from "./Side";
 
 /**
  * The score now. GameWinner is who has just won a game and MatchWinner who has just won the
@@ -37,6 +37,11 @@ export class Score {
  * number of games (2.12.1), five here. A finished game's score stands until the next rally begins
  * (Next), so it can be read; a finished match's likewise, and then a new match starts from love-all.
  * The score is kept by end, so a doubles pair shares one.
+ *
+ * It also keeps the order of service (2.13): who serves first is drawn by lot (2.13.1, the caller's
+ * draw, SetFirstServer); the service changes ends after every 2 points, and after every point once
+ * both have reached 10 (2.13.3); and whoever served first in a game receives first in the next
+ * (2.13.6). The players do not change ends between games (2.13.7): Near is always this machine's.
  */
 export class Scoreboard {
     /** [ITTF] 2.11.1: the points that win a game. */
@@ -53,6 +58,33 @@ export class Scoreboard {
     private FarGames = 0;
     private GameWinner: Side | null = null;
     private MatchWinner: Side | null = null;
+
+    /** Who serves first in the match's first game; [ITTF] 2.13.1 leaves it to a lot, which the caller draws. */
+    private FirstServer: Side = "Near";
+
+    /** [ITTF] 2.13.3: the points each end serves in turn, until both reach GamePoints - 1. */
+    static readonly ServesEach = 2;
+
+    /** The end that serves first in the match's first game. Meant for love-all at the start of a match. */
+    SetFirstServer(First: Side): void { this.FirstServer = First; }
+
+    /**
+     * Whose serve the next rally is. [ITTF] 2.13.3: the service passes to the receiver after each
+     * ServesEach points, and after each single point once both ends have GamePoints - 1. [ITTF]
+     * 2.13.6: the first server of a game receives first in the next. While a won game stands on the
+     * board, this is already the next game's first server.
+     */
+    Server(): Side {
+        const Games = this.MatchWinner !== null ? 0 : this.NearGames + this.FarGames;
+        const First = Games % 2 === 0 ? this.FirstServer : Other(this.FirstServer);
+        if (this.GameWinner !== null) return First;
+        const Played = this.NearPoints + this.FarPoints;
+        const Deuce = Scoreboard.GamePoints - 1;
+        const Turns = this.NearPoints >= Deuce && this.FarPoints >= Deuce
+            ? (2 * Deuce) / Scoreboard.ServesEach + (Played - 2 * Deuce)
+            : Math.floor(Played / Scoreboard.ServesEach);
+        return Turns % 2 === 0 ? First : Other(First);
+    }
 
     /** A point to Winner; null is a let and changes nothing. Ignored once a game is won, until Next. */
     Award(Winner: Side | null): void {

@@ -4,7 +4,7 @@ Table tennis with real physics, where every shot comes from your swing. This is 
 
 You control the paddle with your mouse, and the ball follows *real physics*. Nothing about a shot is chosen from a menu or a button press. Its speed, direction and spin all come from how the paddle is moving when it meets the ball.
 
-> **Status:** early development, like the Java edition. There are no serves yet: each point starts with a ball fed to one of the players.
+> **Status:** early development, like the Java edition. Each point starts with a serve, under the official rules.
 
 ## Contents
 
@@ -17,7 +17,7 @@ You control the paddle with your mouse, and the ball follows *real physics*. Not
 
 ## Game modes
 
-**Practice.** Play against the computer. It feeds you one ball after another, working through five drills in turn: a plain *warm-up* ball, *topspin*, *backspin*, and *sidespin* curving each way. Every point is scored, so practice is also a full match against the computer.
+**Practice.** Play a full match against the computer, serving in turn. The computer plays at one of four levels, **Rookie**, **Club**, **Pro** (the default) and **Champion**: add `?level=rookie` (or `club`, `pro`, `champion`) to the address. With `?serve=off` the computer feeds you drills instead: a plain *warm-up* ball, *topspin*, *backspin*, and *sidespin* curving each way.
 
 **Match.** Play another person over the internet or your local network. One of you hosts and reads out a four-letter room code; the other types it in. See [Playing a match online](#playing-a-match-online).
 
@@ -42,6 +42,7 @@ The camera is where you stand, behind your end of the table. Move the mouse to m
 - **Power.** Push the paddle forward through the ball. A gentle push drops short or into the net, an ordinary one lands mid-court, a harder one lands deep and fast, and too hard a one flies past the end.
 - **Spin.** Swipe sideways through the ball to spin it. The faster the swipe, the more sidespin. The ball curves but still lands on the line you aimed.
 - **Height.** Once the ball has bounced on your side, your paddle rises to its height by itself.
+- **Serving.** When it's your serve, the ball rests in your free hand, just in front of your paddle. Move the paddle to where you want to serve from, then **double-click** to toss the ball up. As it falls, push the paddle forward through it: your paddle rises to meet it. Aim and power work as for any other shot. The serve assist makes sure the ball bounces on your side first; getting it over the net and onto the other side is up to your push. Too soft and it meets the net, too hard and it flies long.
 
 A ball met near the edge of the paddle follows your aim less than one met in the middle. The display on the left shows the score, who won the last point and why, and the spin on the ball.
 
@@ -53,9 +54,10 @@ Input | Action
 :-- | :--
 Mouse movement | Move the paddle
 Swing through the ball | Hit the ball
+Double-click | Toss the ball to serve
 `W` / `S` | Tilt the paddle face down / up
 `A` / `D` | Tilt the paddle face right / left
-`Space` | New ball now (practice)
+`Space` | Next serve (or new ball) now (practice)
 `[` / `]` | Slower / faster game
 `P` | Pause
 `M` | Open the Match page
@@ -83,9 +85,13 @@ In a rally, the ball must cross the net and bounce once on the opponent's side. 
 
 **Net balls.** A ball that clips the net but still lands on the opponent's side stays in play.
 
+**Serving.** The serve changes sides every **2 points**, and every point from 10-all. Who serves first is drawn by lot, and alternates from game to game. The toss must rise at least 16 cm and be struck as it falls, from behind your end line. The served ball must bounce once on your side and then on the opponent's. A serve that clips the net and still lands in is a **let** and is served again; any other failed serve, including a toss you don't hit, is the opponent's point.
+
 ## Playing a match online
 
 Browsers can't open raw network sockets, so both players connect through a small relay server that passes their messages along. It knows nothing about table tennis: each player's own browser runs the game and decides its own hits.
+
+The match starts through the relay, then the two browsers try to connect straight to each other (WebRTC, using public STUN servers) and switch over without a pause when that works; the Match page shows `PING 34 ms · DIRECT` or `· RELAY`. If a direct connection can't be made (some office and mobile networks), or drops, the match simply stays on the relay. The relay answers `/health` with how many rooms and seats are in use.
 
 **On the same network** (same home or school Wi-Fi), one machine runs both the game and the relay:
 
@@ -128,12 +134,15 @@ Option | Effect
 `speed=0.8` | Game speed, from 0.1 to 1 (default 0.5)
 `follow=off` | Start with the follow camera off
 `lift=off` | Turn off the automatic paddle lift
-`assist=off` | Leave every hit to the raw physics, without the aimed direction and power
+`assist=off` | Leave every hit to the raw physics, without the aimed direction and power, or the serve assist
+`serve=off` | Start each point with a fed ball instead of a serve (the drills, in practice)
+`level=rookie` | The computer's level: `rookie`, `club`, `pro` (default) or `champion`
 `aimhelp=0.8` | Turn on the aim help, from 0 (off, the default) to 1
 `view=courtside` | Start in another camera view: `player`, `courtside`, `overhead`, `reverse`, `left`, `right`, `hall` or `racket`
 `aim=x,z` | Pin your paddle at that spot, in metres from the table's centre (`+z` toward you)
 `ball=x,y,z` | Hold the ball still there (`+y` up from the tabletop), with no feeds
 `settings` | Open the display settings at launch
+`quality=high` | Pin the graphics quality: `low`, `medium`, `high` or `ultra` (otherwise the game picks by frame rate)
 
 **Layout.** `src/engine` is pure ball physics, `src/game` the rules, players and controls, `src/net` the online play, and `src/app` the Three.js shell. The dependency runs one way, `app → net → game → engine`, and only `app` touches the browser or Three.js. `CLAUDE.md` explains the architecture in detail.
 
@@ -150,8 +159,8 @@ Step | Feature | Details
 1 | Better hits | Shots depend even more on your swing, and the game assists less
 2 | Faster game | A slightly faster game speed
 3 | New graphics | Improved lighting, paddles and playing hall
-4 | Serving | Double-click to toss the ball and hit it as it falls, following official serve rules
-5 | Match mode | First version done: online play against another person. Serves still to come
+4 | Serving | Done: double-click to toss the ball and hit it as it falls, following official serve rules
+5 | Match mode | First version done: online play against another person, with serves
 6 | Doubles (2v2) | The seat-based rally and the relay's rooms are the groundwork
 
 **Planned for later**: `sound`, `tournaments`.

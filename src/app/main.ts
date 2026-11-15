@@ -2,16 +2,22 @@ import * as THREE from "three";
 import { Vec3 } from "../engine/math/Vec3";
 import { CursorFollower } from "../game/control/CursorFollower";
 import { ReachEnvelope } from "../game/control/ReachEnvelope";
+import { LevelNamed } from "../game/Level";
 import { Opponent } from "../game/Opponent";
 import { Rally } from "../game/Rally";
 import { RemoteRacket } from "../game/RemoteRacket";
 import { NetSession } from "../net/NetSession";
+import { WebRtcTransport } from "../net/WebRtcTransport";
 import { WebSocketTransport } from "../net/WebSocketTransport";
 import { CameraRig } from "./camera/CameraRig";
 import { CourtOverlay } from "./CourtOverlay";
 import { GameLoop } from "./GameLoop";
+import { Graphics, Qualities, Quality } from "./Graphics";
 import { RacketControl } from "./input/RacketControl";
 import { MatchPage } from "./MatchPage";
+import { SoundEngine } from "./audio/SoundEngine";
+import * as Art from "./scene/Art";
+import { InstallShell } from "./ui/Shell";
 import { TableScene } from "./scene/TableScene";
 import "./style.css";
 
@@ -28,26 +34,28 @@ const Numbers = (Name: string): number[] | null => {
     return Parts.every(Number.isFinite) ? Parts : null;
 };
 
-const Stage = document.getElementById("stage")!;
-const Renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
-Renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-Renderer.shadowMap.enabled = true;
-Renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-Renderer.outputColorSpace = THREE.SRGBColorSpace;
-Renderer.toneMapping = THREE.ACESFilmicToneMapping;
-Renderer.toneMappingExposure = 1.05;
-Stage.append(Renderer.domElement);
+/** TUNED: a stroke of the player's that changes the ball's velocity by this much, m/s, begins to jolt the camera; by this much, jolts it fully. */
+const JoltFrom = 7, JoltFull = 18;
 
+const Stage = document.getElementById("stage")!;
 const World = new TableScene();
 const Scene = new THREE.Scene();
-Scene.background = new THREE.Color("#17232e");
+Scene.background = new THREE.Color("#05070b");
 Scene.add(World.Root);
 
 const Rig = new CameraRig();
 Rig.View(Options.get("view") ?? "player");
 // "?follow=off" keeps the player view still instead of following the rally.
 if (Options.get("follow") === "off") Rig.SetFollowing(false);
+
+const Gfx = new Graphics(Stage, Scene, Rig.Camera, World.Hall.Key);
+const Renderer = Gfx.Renderer;
 Rig.Attach(Renderer.domElement);
+// "?quality=low|medium|high|ultra" pins the graphics quality; without it the frame rate picks.
+const AskedQuality = Options.get("quality");
+if (AskedQuality !== null && (Qualities as readonly string[]).includes(AskedQuality)) Gfx.SetQuality(AskedQuality as Quality);
+// The hall's lights lie in the table and the ball once its images are in.
+void Art.Ready().then(() => Gfx.Surroundings(World.Hall.Surround));
 
 const Hand = new CursorFollower(ReachEnvelope.Neutral);
 const Racket = new RacketControl(Hand, Rig.Camera);
@@ -56,8 +64,10 @@ const Racket = new RacketControl(Hand, Rig.Camera);
  * The hitting helps as the URL sets them, for a practice rally and a match alike. "lift=off"
  * switches off the help that raises the racket to a bounced ball's height; "assist=off" leaves the
  * player's contact to the engine alone; "aimhelp=0.8" turns on the help that turns the face.
+ * Points start with a serve; "serve=off" goes back to fed balls (the drills, in practice).
  */
 function Configured(Game: Rally): Rally {
+    Game.SetServing(Options.get("serve") !== "off");
     if (Options.get("lift") === "off") Game.SetAutoLift(false);
     if (Options.get("assist") === "off") Game.SetShotAssist(false);
     const AimHelp = Options.get("aimhelp");
@@ -65,7 +75,10 @@ function Configured(Game: Rally): Rally {
     return Game;
 }
 
-const Game = Configured(new Rally(Hand));
+// "level=rookie|club|pro|champion" sets how well the computer plays (pro by default).
+let LevelKey = Options.get("level");
+const Computer = () => new Opponent(LevelNamed(LevelKey));
+const Game = Configured(new Rally(Hand, Computer()));
 // Repeatable visual checks: "ball=x,y,z" in metres holds the ball still there, unfed.
 const HeldBall = Numbers("ball");
 if (HeldBall !== null && HeldBall.length === 3) Game.Hold(new Vec3(HeldBall[0], HeldBall[1], HeldBall[2]));
@@ -76,8 +89,8 @@ else Racket.Attach(Renderer.domElement);
 
 // A neutral exposure overlay dims the rendered world without dimming the HUD.
 const Dimmer = document.getElementById("dimmer")!;
-const Saved = (() => { try { return Number(localStorage.getItem("courtBrightness") ?? 75); } catch { return 75; } })();
-let Brightness = Number.isFinite(Saved) ? Math.max(30, Math.min(100, Saved)) : 75;
+const Saved = (() => { try { return Number(localStorage.getItem("courtBrightness") ?? 100); } catch { return 100; } })();
+let Brightness = Number.isFinite(Saved) ? Math.max(30, Math.min(100, Saved)) : 100;
 const ShowBrightness = () => { Dimmer.style.opacity = String(1 - Brightness / 100); };
 ShowBrightness();
 const Hud = new CourtOverlay(Rig, {
@@ -91,24 +104,34 @@ const Hud = new CourtOverlay(Rig, {
 if (Options.has("settings")) Hud.ShowDisplaySettings();
 document.getElementById("ui")!.append(Hud.Root);
 
-function Resize(): void {
-    const Width = Stage.clientWidth, Height = Stage.clientHeight;
-    Renderer.setSize(Width, Height, false);
-    Rig.Camera.aspect = Width / Math.max(1, Height);
-    Rig.Camera.updateProjectionMatrix();
-}
-window.addEventListener("resize", Resize);
-Resize();
+window.addEventListener("resize", () => Gfx.Resize());
+Gfx.Resize();
 
-const Loop = new GameLoop(Game, Hand, World, Rig, Hud, () => Renderer.render(Scene, Rig.Camera));
+let FrameSeconds = 0;
+const Loop = new GameLoop(Game, Hand, World, Rig, Hud, () => Gfx.Render(FrameSeconds));
+// The scene throws its sparks at what the rally reports; a hard stroke of the player's own jolts the camera.
+Loop.Listen(World);
+Loop.Listen({
+    Hit: (Racket, _At, SpeedChange) => { if (Racket === Rally.PlayerRacket) Rig.Kick((SpeedChange - JoltFrom) / (JoltFull - JoltFrom)); },
+    Frame: RealSeconds => { FrameSeconds = RealSeconds; Rig.Settle(RealSeconds); ShowService(); },
+});
 // "speed=0.8" sets the game speed, game seconds per real second; [ and ] step it while playing.
+// A double-click tosses the ball when it is the player's serve.
+Racket.SetOnToss(() => Loop.Current().Toss());
 const Speed = Options.get("speed");
 if (Speed !== null) Loop.SetSpeed(Number(Speed));
 
 /** Back to the computer, from love-all. */
 function BackToPractice(): void {
-    Loop.SetGame(Configured(new Rally(Hand)));
+    Loop.SetGame(Configured(new Rally(Hand, Computer())));
     Hud.SetOpponent("CPU", "Computer");
+}
+
+/** Whose serve it is and what the player is waiting for, shown once a frame. */
+function ShowService(): void {
+    const Now = Loop.Current();
+    Hud.SetServer(Now.Serving() ? Now.Server() : null);
+    Hud.ShowPrompt(Hud.IsOpen() || !Now.Serving() ? "" : Now.AwaitingToss() ? "Double-click to serve" : Now.AwaitingTheirToss() ? "Opponent to serve" : "");
 }
 
 /** Turns the rally into a match over Link: the far racket becomes the other machine's player, relayed by a NetSession the loop pumps. */
@@ -116,7 +139,10 @@ function StartMatch(Link: WebSocketTransport, AsHost: boolean, Badge: string): v
     const Remote = new RemoteRacket(new Vec3(0, 0.2, Opponent.StandZ));
     const Match = Configured(new Rally(Hand, Remote, true));
     Loop.SetGame(Match);
-    Loop.SetNet(new NetSession(Link, Hand, Remote, Match, AsHost), () => {
+    // The match starts over the relay and moves to a direct connection by itself when one can be made.
+    const Session = new NetSession(WebRtcTransport.Over(Link, AsHost), Hand, Remote, Match, AsHost);
+    Page.WatchLink(() => Session.Describe(), Text => Hud.ShowLink(Text));
+    Loop.SetNet(Session, () => {
         BackToPractice();
         Page.Ended("Your opponent left the match.");
     });
@@ -127,6 +153,29 @@ function StartMatch(Link: WebSocketTransport, AsHost: boolean, Badge: string): v
 const Page: MatchPage = new MatchPage(StartMatch, () => { Loop.EndNet(); BackToPractice(); });
 document.getElementById("ui")!.append(Page.Root);
 Hud.SetOnMatch(() => { Racket.ReleaseAll(); Page.Open(); });
+
+// ==== UI + SOUND (the 2D layer and the sound engine) — begin ====
+// The HUD and the sound both follow the rally through the loop's events; InstallShell (ui/Shell.ts)
+// joins the menus, Esc / N and the button sounds to the game. "?menu=off" (or view/aim/ball) starts in play.
+const Sound = new SoundEngine();
+Loop.Listen(Hud);
+Loop.Listen(Sound);
+InstallShell({ Hud, Sound, Loop, Page, Racket, Options, Restart: BackToPractice });
+// The quality picked in Settings. The stored one is where a launch starts, and the frame rate may
+// still step it down; one picked while playing stays. "?quality=" outranks both.
+let QualityHeard = false;
+Hud.OnQuality(Chosen => {
+    if (AskedQuality === null) Gfx.SetQuality(Chosen.toLowerCase() as Quality, QualityHeard);
+    QualityHeard = true;
+});
+// The computer's level picked on the title or in Settings: a new one starts practice again from love-all.
+// "?level=" outranks the stored one.
+Hud.OnLevel(Chosen => {
+    if (Options.get("level") !== null || LevelKey === Chosen.toLowerCase()) return;
+    LevelKey = Chosen.toLowerCase();
+    if (!Loop.Online()) BackToPractice();
+});
+// ==== UI + SOUND — end ====
 
 window.addEventListener("keydown", Event => {
     // While the Match page is open, typing goes to it; only Esc reaches the game, to close it.
@@ -146,7 +195,7 @@ window.addEventListener("keydown", Event => {
         case "Digit7": Rig.View("hall"); break;
         case "Digit8": Rig.View("racket"); break;
         case "KeyH": Hud.ToggleVisible(); break;
-        // In a match the host puts every ball in play, so a new ball on demand is practice only.
+        // In a match the host puts every ball in play, so a new ball (or the next serve) on demand is practice only.
         case "Space": if (!Loop.Online()) Loop.Current().FeedNow(); Event.preventDefault(); break;
         case "KeyM": Event.preventDefault(); Racket.ReleaseAll(); Page.Open(); break;
         case "BracketLeft": Loop.StepSpeed(-1); break;
@@ -161,4 +210,4 @@ window.addEventListener("blur", () => Racket.ReleaseAll());
 
 Loop.Start();
 // For automated checks (Playwright): the loop and rally, read-only by convention.
-(window as unknown as { TableTennis: unknown }).TableTennis = { Loop, Rig, Hand };
+(window as unknown as { TableTennis: unknown }).TableTennis = { Loop, Rig, Hand, Gfx, Hud, Sound };
