@@ -142,6 +142,7 @@ Option | Effect
 `aim=x,z` | Pin your paddle at that spot, in metres from the table's centre (`+z` toward you)
 `ball=x,y,z` | Hold the ball still there (`+y` up from the tabletop), with no feeds
 `settings` | Open the display settings at launch
+`quality=high` | Pin the graphics quality: `low`, `medium`, `high` or `ultra` (otherwise the game picks by frame rate)
 
 **Layout.** `src/engine` is pure ball physics, `src/game` the rules, players and controls, `src/net` the online play, and `src/app` the Three.js shell. The dependency runs one way, `app → net → game → engine`, and only `app` touches the browser or Three.js. `CLAUDE.md` explains the architecture in detail.
 

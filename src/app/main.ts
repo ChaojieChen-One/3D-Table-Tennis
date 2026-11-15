@@ -76,7 +76,8 @@ function Configured(Game: Rally): Rally {
 }
 
 // "level=rookie|club|pro|champion" sets how well the computer plays (pro by default).
-const Computer = () => new Opponent(LevelNamed(Options.get("level")));
+let LevelKey = Options.get("level");
+const Computer = () => new Opponent(LevelNamed(LevelKey));
 const Game = Configured(new Rally(Hand, Computer()));
 // Repeatable visual checks: "ball=x,y,z" in metres holds the ball still there, unfed.
 const HeldBall = Numbers("ball");
@@ -112,7 +113,7 @@ const Loop = new GameLoop(Game, Hand, World, Rig, Hud, () => Gfx.Render(FrameSec
 Loop.Listen(World);
 Loop.Listen({
     Hit: (Racket, _At, SpeedChange) => { if (Racket === Rally.PlayerRacket) Rig.Kick((SpeedChange - JoltFrom) / (JoltFull - JoltFrom)); },
-    Frame: RealSeconds => { FrameSeconds = RealSeconds; Rig.Settle(RealSeconds); },
+    Frame: RealSeconds => { FrameSeconds = RealSeconds; Rig.Settle(RealSeconds); ShowService(); },
 });
 // "speed=0.8" sets the game speed, game seconds per real second; [ and ] step it while playing.
 // A double-click tosses the ball when it is the player's serve.
@@ -124,6 +125,13 @@ if (Speed !== null) Loop.SetSpeed(Number(Speed));
 function BackToPractice(): void {
     Loop.SetGame(Configured(new Rally(Hand, Computer())));
     Hud.SetOpponent("CPU", "Computer");
+}
+
+/** Whose serve it is and what the player is waiting for, shown once a frame. */
+function ShowService(): void {
+    const Now = Loop.Current();
+    Hud.SetServer(Now.Serving() ? Now.Server() : null);
+    Hud.ShowPrompt(Hud.IsOpen() || !Now.Serving() ? "" : Now.AwaitingToss() ? "Double-click to serve" : Now.AwaitingTheirToss() ? "Opponent to serve" : "");
 }
 
 /** Turns the rally into a match over Link: the far racket becomes the other machine's player, relayed by a NetSession the loop pumps. */
@@ -159,6 +167,13 @@ let QualityHeard = false;
 Hud.OnQuality(Chosen => {
     if (AskedQuality === null) Gfx.SetQuality(Chosen.toLowerCase() as Quality, QualityHeard);
     QualityHeard = true;
+});
+// The computer's level picked on the title or in Settings: a new one starts practice again from love-all.
+// "?level=" outranks the stored one.
+Hud.OnLevel(Chosen => {
+    if (Options.get("level") !== null || LevelKey === Chosen.toLowerCase()) return;
+    LevelKey = Chosen.toLowerCase();
+    if (!Loop.Online()) BackToPractice();
 });
 // ==== UI + SOUND — end ====
 

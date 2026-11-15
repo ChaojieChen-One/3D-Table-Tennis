@@ -27,7 +27,8 @@ RUN_KNOWN_FAILING=1 npm test         # include APushingPlayerRallies (see below)
 
 No linter or formatter is configured. Visual QA: Playwright (preinstalled in cloud sessions)
 against `npm run dev`, with the URL options in the README (`?view=courtside&aim=0.2,1.5&ball=0,0.3,1.0`);
-`window.TableTennis` exposes `{ Loop, Rig, Hand }` for scripted checks.
+`window.TableTennis` exposes `{ Loop, Rig, Hand, Gfx, Hud, Sound }` for scripted checks; `?menu=off` skips
+the title, and `?quality=high` pins the graphics (a software GPU otherwise steps down to low).
 
 ## Architecture
 
@@ -107,10 +108,20 @@ Only `app` touches the DOM or Three.js; only `server` touches Node.
 - **`server/relay.ts`**: pairs players by room code and relays lines; serves `dist/` on the same
   port, and `/health` (rooms and seats, JSON).
 - **`src/app`**: the Three.js shell. `main.ts` is the composition root and reads the URL options.
-  `GameLoop` (requestAnimationFrame) turns frame time into whole fixed steps. `camera/CameraRig`
-  holds the views, orbit/zoom and the follow camera. `input/` maps the mouse (`CursorRay`) and the
-  face keys to the racket. `CourtOverlay` is the HUD, `MatchPage` hosts or joins. `scene/` holds
-  the geometry and materials; it only reads game state.
+  `GameLoop` (requestAnimationFrame) turns frame time into whole fixed steps, and tells its
+  listeners what happened (`RallyEvents`: `Bounce`, `Hit`, `Net`, `Floor`, `Point`, `NewBall`,
+  `Frame`); the scene's effects, the sound and the HUD all hang off that and never reach into the
+  loop. A remote stroke is told as the remote racket's `Hit`, and the drawn ball eases across its
+  correction (`GameLoop.Gap`). `Graphics` owns the renderer: shadows, bloom, the lens pass, MSAA,
+  the hall's reflections, and the quality levels (`?quality=`; unpinned, it steps down at launch
+  until the frame rate is smooth). `camera/CameraRig` holds the views, orbit/zoom, the follow
+  camera and the hit jolt (`Eye()` is the unjolted stance). `input/` maps the mouse (`CursorRay`),
+  the face keys and the double-click toss to the racket. `CourtOverlay` is the HUD (scoreboard,
+  serve prompt, banners), `ui/` the menus and stored preferences, `audio/SoundEngine` the
+  synthesized sound, `MatchPage` hosts or joins. `scene/` holds the geometry and materials and only
+  reads game state: `ArenaView` (the arena, from `Specs.ts` sizes), `Art` (the photographs in
+  `public/art`, made with an image generator), `BallView` (trail and halo in the spin's colour),
+  `Sparks`, `Impacts`.
 
 ### Fixed clock
 
@@ -171,8 +182,7 @@ The camera is the player's stance: `GameLoop` calls `Hand.SetStance(Rig.Eye(), R
    cap the combined tilt or lower `CursorFollower.FaceTilt`.
 2. The player's own shots don't seem to spin: measure before changing anything (the display's
    `BallView.MostShownRevs` squash, the mostly horizontal swing, `ShotAssist`'s curve correction and blend).
-3. Serving is built. Still open: a HUD line for whose serve it is and "double-click to serve"
-   (`Rally.Server()`, `AwaitingToss()`); a struck serve crossing the wire is covered only by the
+3. Serving is built. Still open: a struck serve crossing the wire is covered only by the
    toss and fault test (`NetServe.test.ts`); the computer's racket does not really strike its serve
    (the ball leaves as the solved launch); the serve's pace constants (`ShotAssist.ServePace*`)
    were tuned by simulation, not by play.

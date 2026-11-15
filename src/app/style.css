@@ -547,3 +547,17 @@ kbd {
   .lockup-word { font-size: clamp(40px, 13vh, 80px); }
   .menu-button { height: 40px; font-size: 17px; }
 }
+
+/* The serve prompt: low in the middle, clear of the ball's path over the table. */
+.hud-prompt {
+  position: absolute; left: 50%; bottom: 13%; transform: translateX(-50%);
+  padding: 9px 20px;
+  font-family: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
+  font-size: 17px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; white-space: nowrap;
+  color: #fff; background: rgba(8, 12, 20, 0.62); border: 1px solid rgba(255, 201, 74, 0.55); border-radius: 4px;
+  backdrop-filter: blur(8px);
+  animation: hud-prompt-breathe 1.6s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes hud-prompt-breathe { 50% { border-color: rgba(255, 201, 74, 1); background: rgba(8, 12, 20, 0.78); } }
+@media (prefers-reduced-motion: reduce) { .hud-prompt { animation: none; } }

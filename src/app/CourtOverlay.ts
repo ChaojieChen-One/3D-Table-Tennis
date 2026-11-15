@@ -166,6 +166,14 @@ export class CourtOverlay implements RallyEvents {
     /** The ball beside whoever serves on the scoreboard; null hides it. */
     SetServer(Server: Side | null): void { this.Bug.SetServer(Server); }
 
+    /** A short instruction low in the middle of the screen, e.g. "DOUBLE-CLICK TO SERVE"; empty hides it. */
+    ShowPrompt(Text: string): void {
+        if (this.Prompt.parentElement === null) { this.Prompt.className = "hud-prompt"; this.Prompt.hidden = true; this.Root.append(this.Prompt); }
+        this.Prompt.hidden = Text === "";
+        if (this.Prompt.textContent !== Text) this.Prompt.textContent = Text;
+    }
+    private readonly Prompt = document.createElement("div");
+
     /** The line about the connection under the corner buttons, e.g. "PING 34 ms · DIRECT"; empty hides it. */
     ShowLink(Text: string): void {
         this.Link.hidden = Text === "";
