@@ -63,8 +63,13 @@ Only `app` touches the DOM or Three.js; only `server` touches Node.
   - `ShotAssist`: direction from `KeyAim` (20°) per held A/D plus `SwipeAim` (3°) per m/s of sideways
     motion; power is pace = `PaceAtRest` + `PacePerPush` × forward push on the arc that lands a
     `RefPace` ball mid-court; both blended with the raw contact by contact quality; spin from a real
-    `Contact.Bounce` brushed by the whole sideways motion. Rejected by the owner: the earlier
-    version's target box, landing search and rescue.
+    `Contact.Bounce` brushed by the whole sideways motion and by `Swing.Brush`. The face tilt shapes
+    the arc: the mid-court arc is solved for a ball `FacePace` faster (W) or slower (S), then raised
+    or lowered by `FaceLift`; it is solved for only `1 - SpinShows` of the topspin, so topspin dips
+    short and backspin floats. Rejected by the owner: the earlier version's target box, landing
+    search and rescue.
+  - `MissWatch`: while the ball is the player's to return, where it passes the racket's depth;
+    `Rally.LastMiss()` says why a point was lost by missing, and the HUD shows it under the call.
   - `Opponent` (always written for the far end) reacts after `ReactionTime`, moves at `MoveSpeed`,
     steps in for short balls, and aims by scanning face angles through `Aiming` (contact + flight)
     until a return clears the net onto its target. `Mirrored` wraps any far-end agent to play the near end.
@@ -88,7 +93,7 @@ Only `app` touches the DOM or Three.js; only `server` touches Node.
 ### Fixed clock
 
 Physics runs only on `FixedClock` steps of 1/480 s, with each frame clamped to 0.25 s. The game
-speed (`GameLoop.DefaultSpeed` 0.5 while hitting is in development) slows real time before it
+speed (`GameLoop.DefaultSpeed` 0.65 while hitting is in development) slows real time before it
 reaches the clock. Every constant in `game` and `engine` is in game seconds. The loop draws
 `RallyView.Between(Before, After, Clock.Alpha())`. Game and engine code never see frame time.
 
@@ -108,6 +113,8 @@ only for JavaFX's flipped, scaled space). Never hard-code a size in scene code; 
    (clamped to `HitY`..`HighestLift`). `?lift=off` disables it.
 5. The swing: `Swing.Read` turns the smoothed motion into the contact's swing: forward saturates
    toward `MostForward` (2 m/s), sideways is cut to `SideShare` (25%), vertical passes whole.
+   `Swing.Brush` adds an upward swing to a closed face's forward push (`BrushPerPush` per m/s at
+   45°, up to `MostBrush`), standing in for a loop's low-to-high path; an open face gets none.
 6. `ShotAssist` replaces the struck ball after a player hit (on by default).
 7. The aim help (`Rally.AimPlayer`, off by default, `?aimhelp=0.8`) turns the untouched face toward
    `Aiming.FaceToward`'s face as a bounced ball comes within 0.8 m.

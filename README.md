@@ -41,11 +41,14 @@ The camera is where you stand, behind your end of the table. Move the mouse to m
 - **Direction.** Hold `A` or `D` (and swipe that way) to send the ball right or left. Aim too wide and it goes out.
 - **Power.** Push the paddle forward through the ball. A gentle push drops short or into the net, an ordinary one lands mid-court, a harder one lands deep and fast, and too hard a one flies past the end.
 - **Spin.** Swipe sideways through the ball to spin it. The faster the swipe, the more sidespin. The ball curves but still lands on the line you aimed.
+- **Topspin and backspin.** Hold `W` to close the paddle face: your push brushes up the back of the ball, so it flies lower and faster with topspin and dips onto the table. A soft push with `W` held goes into the net. Hold `S` to open the face: the ball goes higher and slower with backspin and floats, and a hard push with `S` held goes long.
 - **Height.** Once the ball has bounced on your side, your paddle rises to its height by itself.
+
+When you miss a ball, the display says why under the point, for example how far to the left of or over your paddle the ball went.
 
 A ball met near the edge of the paddle follows your aim less than one met in the middle. The display on the left shows the score, who won the last point and why, and the spin on the ball.
 
-> **Note:** While hitting is being developed, the game starts at half speed. Press `[` and `]` to make it slower or faster.
+> **Note:** While hitting is being developed, the game starts at 65% speed. Press `[` and `]` to make it slower or faster.
 
 ### Controls
 
@@ -109,7 +112,7 @@ Browsers can't open raw network sockets, so both players connect through a small
 
 A free Render service sleeps after 15 minutes without traffic and takes about a minute to wake; opening the Match page starts waking it. A [playit.gg](https://playit.gg) tunnel to local port `26780` also works, typed under **CONNECTION** on the Match page.
 
-A match runs at half speed on both computers, and if one player leaves, the other goes back to practice.
+A match runs at 65% speed on both computers, and if one player leaves, the other goes back to practice.
 
 ## For developers
 

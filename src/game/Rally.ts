@@ -11,6 +11,7 @@ import { RacketPose } from "./control/RacketPose";
 import { ReachEnvelope } from "./control/ReachEnvelope";
 import { Swing } from "./control/Swing";
 import { Feeder } from "./Feeder";
+import { MissWatch } from "./MissWatch";
 import { FixedClock } from "./FixedClock";
 import { Opponent } from "./Opponent";
 import { HalfTurnBall, RacketAgent } from "./RacketAgent";
@@ -125,6 +126,11 @@ export class Rally {
     private PendingFor = 0;
 
     private Last: Point | null = null;
+
+    /** Why the player missed the ball they had to return, watched while it was theirs; and the last point's, if they lost it that way. */
+    private readonly Misses = new MissWatch();
+    private Missable = false;
+    private LastMissed: string | null = null;
     private Ball: BallState = new BallState(Feeder.Hold, Vec3.Zero, Vec3.Zero);
     private Held = true;
     private FeedIn = Rally.FeedDelay;
@@ -222,6 +228,12 @@ export class Rally {
         if (this.Shots !== null && Result.Racket === Rally.PlayerRacket)
             Result = { ...Result, Ball: this.Shots.Shoot(this.Ball, Result.Ball, PlayerTo, this.Player.Moving(), this.Player.RightTilt()) };
         this.LastResult = Result;
+        // Kept once seen, so a call that arrives later (held by the host, or from it) still finds the miss.
+        if (Result.Racket === Rally.PlayerRacket) this.Missable = false;
+        else if (this.Umpire.Awaiting("Near")) {
+            this.Missable = true;
+            this.Misses.Watch(this.Ball, Result.Ball, PlayerTo);
+        }
         this.Ball = Result.Ball;
         if (this.IsNetworked && !this.Closed && Result.Racket === Rally.PlayerRacket) this.OnLocalHit(this.Ball);
 
@@ -308,6 +320,7 @@ export class Rally {
     private Award(Called: Point): void {
         this.Pending = null;
         this.Last = Called;
+        this.LastMissed = Called.Winner === "Far" && this.Missable ? this.Misses.Describe() : null;
         this.Board.Award(Called.Winner);
         if (this.IsNetworked) {
             this.Closed = true;
@@ -322,6 +335,8 @@ export class Rally {
 
     /** Puts Ball in play as it is, as a stroke by Striker, for drills and tests. */
     Launch(Ball: BallState, Striker: Side): void {
+        this.Misses.Reset();
+        this.Missable = false;
         this.Ball = Ball;
         this.Held = false;
         this.FeedIn = Number.NaN;
@@ -346,6 +361,9 @@ export class Rally {
 
     /** How the last finished rally ended, or null before the first. */
     LastPoint(): Point | null { return this.Last; }
+
+    /** Why the player missed the ball that lost them the last point, or null if they didn't lose it by missing. */
+    LastMiss(): string | null { return this.LastMissed; }
 
     /** Which drill the next practice feed will be. */
     UpcomingDrill(): string { return this.Feed.Upcoming().Name; }
