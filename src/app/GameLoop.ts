@@ -15,15 +15,15 @@ import { SpinLine } from "./SpinLine";
  */
 export class GameLoop {
     /**
-     * TUNED: game seconds per real second at launch, 3/4 while the hitting is being developed, at
-     * the owner's request (1/2 before); play has run at 4/5 (3/5 was not intense enough). Everything slows
+     * TUNED: game seconds per real second at launch, 0.65 while the hitting is being developed, at
+     * the owner's request (1/2, then 3/4 was too fast); play has run at 4/5 (3/5 was not intense enough). Everything slows
      * alike: the ball, every racket and every pause, so the physics is unchanged, only watched
      * slower. "?speed=" and the [ and ] keys change it.
      */
-    static readonly DefaultSpeed = 0.75;
+    static readonly DefaultSpeed = 0.65;
 
     /** The speeds [ and ] step through, game seconds per real second. */
-    private static readonly Speeds = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.75, 0.8, 0.9, 1.0];
+    private static readonly Speeds = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.65, 0.7, 0.8, 0.9, 1.0];
 
     private readonly Clock = new FixedClock();
     private GameSpeed = GameLoop.DefaultSpeed;
