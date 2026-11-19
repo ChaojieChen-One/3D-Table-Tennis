@@ -34,4 +34,28 @@ export function Read(Moving: Vec3, Facing: Vec3): Vec3 {
                  .PlusScaled(Vec3.Up, Moving.Y);
 }
 
-export const Swing = { MostForward, SideShare, Smoothing, Read } as const;
+/**
+ * TUNED: how fast a closed face's forward push is swung up through the ball, m/s per m/s of push
+ * at a full 45 degree tilt. A loop is swung low to high with a closed face; the cursor moves the
+ * racket only across the table, so the face key (W) stands in for that path, in proportion to how
+ * far the face is turned. An open face is not brushed down: swung down along an open face the
+ * racket hardly pushes the ball at all, and the open face already cuts backspin from the contact.
+ */
+export const BrushPerPush = 0.6;
+
+/** TUNED: the fastest that brush gets, m/s, so a full push does not brush the ball past its grip. */
+export const MostBrush = 3.0;
+
+/**
+ * The upward swing a closed face of Normal brings to a forward push, m/s along Vec3.Up, for topspin;
+ * none for a square or open face. Only the push counts, so a racket drawn back or held still brushes nothing.
+ */
+export function Brush(Normal: Vec3, Moving: Vec3, Facing: Vec3): Vec3 {
+    const Push = Math.max(0, Moving.Dot(Facing));
+    const Level = Math.hypot(Normal.X, Normal.Z);
+    if (Push === 0 || Normal.Y >= 0 || Level < 1e-9) return Vec3.Zero;
+    const Closed = -Normal.Y / Level;   // tan of the face's turn down from vertical: 1 at 45 degrees
+    return Vec3.Up.Scale(Math.min(MostBrush, BrushPerPush * Closed * Push));
+}
+
+export const Swing = { MostForward, SideShare, Smoothing, BrushPerPush, MostBrush, Read, Brush } as const;

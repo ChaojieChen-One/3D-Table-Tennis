@@ -163,6 +163,6 @@ export class GameLoop {
         View.Rackets.forEach((Each, Index) => this.World.PoseRacket(Index, Each.Centre, Each.Normal, Each.Roll));
         this.World.PlaceBall(View.Ball.Position);
         this.Hud.ShowSpin(SpinLine.Describe(View.Ball));
-        this.Hud.ShowScore(this.Game.Score(), this.Game.LastPoint());
+        this.Hud.ShowScore(this.Game.Score(), this.Game.LastPoint(), this.Game.LastMiss());
     }
 }

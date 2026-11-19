@@ -27,6 +27,7 @@ export class CourtOverlay {
     private readonly Spin = Make("div", "hud-chip", "SPIN   none");
     private readonly Speed = Make("div", "hud-chip");
     private readonly Call = Make("div", "hud-chip hud-call", "FIRST TO 11  ·  BEST OF 5");
+    private readonly Miss = Make("div", "hud-chip hud-miss");
     private readonly Board = Make("div", "score");
     private readonly Cells: Record<Side, { Name: HTMLElement; Games: HTMLElement; Points: HTMLElement }>;
     private readonly Display = Make("div", "hud-panel");
@@ -53,7 +54,8 @@ export class CourtOverlay {
         this.Cells = { Near: Row("#c83446"), Far: Row("#253648") };
         this.Board.setAttribute("role", "status");
         const TopLeft = Make("div", "hud-top-left");
-        TopLeft.append(this.Board, this.Call, this.Spin, this.Speed);
+        TopLeft.append(this.Board, this.Call, this.Miss, this.Spin, this.Speed);
+        this.Miss.hidden = true;
 
         const ViewRow = Make("div", "hud-row");
         ViewRow.append(Button("1  PLAYER", () => Rig.Reset()), Button("2  COURTSIDE", () => Rig.View("courtside")),
@@ -114,10 +116,13 @@ export class CourtOverlay {
      * The score and the umpire's last call: who won the point and why, or the game or match.
      * Called every frame, so the labels change only when the score or the call does.
      */
-    ShowScore(Now: Score, Called: Point | null): void {
+    ShowScore(Now: Score, Called: Point | null, Missed: string | null = null): void {
         if (this.ShownScore !== null && Now.Equals(this.ShownScore) && Called === this.ShownCall) return;
         this.ShownScore = Now;
         this.ShownCall = Called;
+        // Why the player missed, under the call, until the next point is called.
+        this.Miss.hidden = Missed === null;
+        this.Miss.textContent = Missed === null ? "" : "MISSED  ·  " + Missed;
         for (const Each of ["Near", "Far"] as Side[]) {
             this.Cells[Each].Games.textContent = String(Now.Games(Each));
             this.Cells[Each].Points.textContent = String(Now.Points(Each));

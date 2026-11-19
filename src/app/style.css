@@ -42,6 +42,8 @@ html, body {
   white-space: pre;
 }
 .hud-call { color: #f1efe4; font-weight: 700; white-space: normal; max-width: min(560px, 70vw); }
+.hud-miss { color: #ffcf8a; white-space: normal; max-width: min(560px, 70vw); }
+.hud-miss[hidden] { display: none; }
 .hud-legend { position: absolute; left: 26px; bottom: 26px; padding: 8px 14px; white-space: normal; max-width: 52vw; }
 .hud-help { color: #bac6c8; font-size: 10px; }
 .hud-bottom-right {

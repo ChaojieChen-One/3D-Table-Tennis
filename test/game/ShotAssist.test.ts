@@ -14,7 +14,7 @@ import { Swing } from "../../src/game/control/Swing";
 import { Feeder } from "../../src/game/Feeder";
 import { FixedClock } from "../../src/game/FixedClock";
 import { ShotAssist } from "../../src/game/ShotAssist";
-import { Check } from "../Measure";
+import { Check, F } from "../Measure";
 
 const Forward = new Vec3(0, 0, -1), Right = new Vec3(1, 0, 0);
 const Signed = (V: number, D: number) => (V >= 0 ? "+" : "") + V.toFixed(D);
@@ -140,4 +140,48 @@ test("AWideAimMisses", () => {
         Measured += `${Feeder.Drills[Drill].Name}: lands at x ${Signed(Down.X, 2)} z ${Signed(Down.Z, 2)}; `;
     }
     Check(AllOut, Measured);
+});
+
+/** A mid-blade hit on Ball by a face tilted up by Up (W is -1, S +1) and pushed forward at 3 m/s, its brush included as CursorFollower swings it. */
+function Tilted(Ball: BallState, Up: number): BallState {
+    const Normal = Forward.PlusScaled(Vec3.Up, Up * CursorFollower.FaceTilt).Normalized();
+    const Moving = new Vec3(0, 0, -3);
+    const Racket = new RacketPose(Ball.Position.PlusScaled(Normal, -RacketSpec.BladeThickness), Normal, 0);
+    const Struck = Contact.Bounce(Ball, Normal, Swing.Read(Moving, Forward).Plus(Swing.Brush(Normal, Moving, Forward)), Surface.Racket);
+    return new ShotAssist().Shoot(Ball, Struck, Racket, Moving, 0);
+}
+
+/** The highest the ball's centre gets before it first comes down to the table's height, m. */
+function Apex(Ball: BallState): number {
+    let Highest = Ball.Position.Y;
+    for (let Flown = 0; Flown < 3 && Ball.Position.Y >= 0; Flown += FixedClock.Step) {
+        Ball = Flight.Step(Ball, FixedClock.Step);
+        Highest = Math.max(Highest, Ball.Position.Y);
+    }
+    return Highest;
+}
+
+const Elevation = (V: Vec3) => Math.atan2(V.Y, Math.hypot(V.X, V.Z)) * 180 / Math.PI;
+
+/**
+ * The owner's ask: W should hit lower, and the face should decide the spin. A topspin stroke is
+ * swung low to high with a closed face, a backspin stroke with an open one (coaching practice;
+ * see tabletennisteacher.com's spin guide). For every drill pushed at 3 m/s: the closed face
+ * (W) leaves with topspin and the open face (S) with backspin; and the closed face's flight is
+ * the lowest of the three, launch and peak, and the open face's the highest.
+ */
+test("TheFaceTiltSetsTheArcAndTheSpin", () => {
+    let Measured = "";
+    let AllRight = true;
+    for (let Drill = 0; Drill < Feeder.Drills.length; Drill++) {
+        const Ball = Met(Drill);
+        const [Closed, Square, Open] = [-1, 0, 1].map(Up => Tilted(Ball, Up));
+        const Top = (Shot: BallState) => SpinVector.TopRevs(Shot.Velocity, Shot.Spin);
+        const [EClosed, ESquare, EOpen] = [Closed, Square, Open].map(Shot => Elevation(Shot.Velocity));
+        const [AClosed, ASquare, AOpen] = [Closed, Square, Open].map(Apex);
+        AllRight &&= Top(Closed) > 0 && Top(Open) < 0 && EClosed < ESquare && ESquare < EOpen && AClosed < ASquare && ASquare < AOpen;
+        Measured += `${Feeder.Drills[Drill].Name}: W ${Signed(Top(Closed), 0)} rev/s, ${F(EClosed, 1)} deg, peak ${F(AClosed, 2)} m; `
+                  + `square ${Signed(Top(Square), 0)}, ${F(ESquare, 1)}, ${F(ASquare, 2)}; S ${Signed(Top(Open), 0)}, ${F(EOpen, 1)}, ${F(AOpen, 2)}; `;
+    }
+    Check(AllRight, Measured);
 });

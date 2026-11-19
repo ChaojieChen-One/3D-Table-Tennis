@@ -41,7 +41,10 @@ The camera is where you stand, behind your end of the table. Move the mouse to m
 - **Direction.** Hold `A` or `D` (and swipe that way) to send the ball right or left. Aim too wide and it goes out.
 - **Power.** Push the paddle forward through the ball. A gentle push drops short or into the net, an ordinary one lands mid-court, a harder one lands deep and fast, and too hard a one flies past the end.
 - **Spin.** Swipe sideways through the ball to spin it. The faster the swipe, the more sidespin. The ball curves but still lands on the line you aimed.
+- **Topspin and backspin.** Hold `W` to close the paddle face: your push brushes up the back of the ball, so it flies lower and faster with topspin and dips onto the table. A soft push with `W` held goes into the net. Hold `S` to open the face: the ball goes higher and slower with backspin and floats, and a hard push with `S` held goes long.
 - **Height.** Once the ball has bounced on your side, your paddle rises to its height by itself.
+
+When you miss a ball, the display says why under the point, for example how far to the left of or over your paddle the ball went.
 
 A ball met near the edge of the paddle follows your aim less than one met in the middle. The display on the left shows the score, who won the last point and why, and the spin on the ball.
 

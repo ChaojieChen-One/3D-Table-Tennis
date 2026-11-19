@@ -24,10 +24,12 @@ export interface Shot {
  * from straight down the table. The power follows how fast the racket is pushed forward: the ball
  * leaves at a pace read from that push, on the arc that would land a ball of RefPace mid-court, so
  * a harder push flies faster and longer and too hard a one goes past the end line, while too soft
- * a one drops short or into the net. The spin is the contact's own. The earlier version's target
- * box, landing search and rescue are gone: nothing makes a shot land. The launch is turned so the
- * ball comes down on the aimed line even as its sidespin bends it. As there, a ball met near the
- * rim keeps more of the raw contact.
+ * a one drops short or into the net. The face's tilt (W and S) lowers or raises that arc: a closed
+ * face drives a faster, flatter ball, an open one lifts a slower, higher one. The spin is the
+ * contact's own, brushed up the ball by a closed face's push (Swing.Brush). The arc is solved for
+ * only part of that spin, so the spin shows: topspin dips the ball short and backspin floats it. The earlier version's target box, landing search and rescue are gone:
+ * nothing makes a shot land. The launch is turned so the ball comes down on the aimed line even as
+ * its sidespin bends it. As there, a ball met near the rim keeps more of the raw contact.
  */
 export class ShotAssist {
     /**
@@ -63,6 +65,24 @@ export class ShotAssist {
 
     /** TUNED: degrees of heading per m/s of the racket's sideways motion; the racket's top speed swipes 18 degrees. */
     static readonly SwipeAim = 3.0;
+
+    /**
+     * TUNED: degrees the launch rises per degree the face is turned up (S), or falls per degree it
+     * is turned down (W), from the mid-court arc. A full 45 degree tilt moves the launch by 1.8.
+     */
+    static readonly FaceLift = 0.04;
+
+    /**
+     * TUNED: the share by which a full 45 degree tilt speeds up (W) or slows down (S) the ball whose
+     * mid-court arc the shot flies: a faster ball lands there on a flatter arc, a slower one on a higher.
+     */
+    static readonly FacePace = 0.25;
+
+    /**
+     * TUNED: the share of the topspin or backspin the arc is not solved for, which bends the flight
+     * away from it: at 0 every spin lands mid-court and none can be seen, at 1 the spin alone decides.
+     */
+    static readonly SpinShows = 0.3;
 
     /** TUNED (earlier version): the most sidespin a swipe puts on the ball, rev/s. */
     static readonly MaxSidespin = 50;
@@ -123,14 +143,23 @@ export class ShotAssist {
         // The spin: the contact brushed by the racket's whole sideways motion. Swing cuts the swipe to
         // a quarter so that chasing the ball cannot throw it wide; here the direction is the aim's,
         // so the swipe can spin the ball in full.
-        const Brush = Swing.Read(Moving, ShotAssist.Ahead).PlusScaled(ShotAssist.Right, Moving.X * (1 - Swing.SideShare));
+        // A closed face also brushes the ball upward (Swing.Brush), as it does in the raw contact.
+        const Brush = Swing.Read(Moving, ShotAssist.Ahead).PlusScaled(ShotAssist.Right, Moving.X * (1 - Swing.SideShare))
+                           .Plus(Swing.Brush(Racket.Normal, Moving, ShotAssist.Ahead));
         const Spun = Contact.Bounce(Incoming, Racket.Normal, Brush, Surface.Racket).Spin;
         const Top = SpinVector.TopRevs(Velocity, Spun), Side = Clamp(SpinVector.SideRevs(Spun), -ShotAssist.MaxSidespin, ShotAssist.MaxSidespin);
         const At = Struck.Position;
         const Depth = -ShotAssist.RefDepthFrac * TableSpec.HalfLength;
         const Target = new Vec3(At.X + Math.tan(ToRadians(Wanted)) * (At.Z - Depth), 0, Depth);
-        const Arc = ShotAssist.Arc(At, LaunchSolver.AtTarget(At, Target, ShotAssist.RefPace, Top, Side, ShotAssist.TrialStep).Velocity, Target, Top, Side);
-        const Planned = new Vec3(Arc.X, 0, Arc.Z).Scale(Pace / ShotAssist.RefPace).PlusScaled(Vec3.Up, Arc.Y);
+        // The arc is solved for only part of the topspin, so the rest bends it: down and short, or
+        // (backspin) up and long. Sidespin stays in the solve, so a curving ball still comes down on its line.
+        // A closed face drives: the arc is a faster ball's, so flatter; an open face lifts a slower,
+        // higher one. Either way the push sets the pace on it as before.
+        const Solved = Top * (1 - ShotAssist.SpinShows);
+        const ArcPace = ShotAssist.RefPace * (1 - ShotAssist.FacePace * Clamp(Math.tan(ToRadians(ShotAssist.Pitch(Racket.Normal))), -1, 1));
+        const Arc = ShotAssist.Arc(At, LaunchSolver.AtTarget(At, Target, ArcPace, Solved, Side, ShotAssist.TrialStep).Velocity, Target, Solved, Side);
+        const Paced = new Vec3(Arc.X, 0, Arc.Z).Scale(Pace / ShotAssist.RefPace).PlusScaled(Vec3.Up, Arc.Y);
+        const Planned = ShotAssist.Raised(Paced, ShotAssist.FaceLift * ShotAssist.Pitch(Racket.Normal));
         const Powered = new BallState(At, Vec3.Lerp(Velocity, Planned, Steer),
                                       Vec3.Lerp(Struck.Spin, SpinVector.Of(Planned, Top, Side), Steer));
 
@@ -194,6 +223,18 @@ export class ShotAssist {
             Ball = Next;
         }
         return -1;
+    }
+
+    /** Degrees the face is turned up from vertical: positive open (S), negative closed (W). */
+    static Pitch(Normal: Vec3): number { return ToDegrees(Math.atan2(Normal.Y, Math.hypot(Normal.X, Normal.Z))); }
+
+    /** Launch raised by Degrees (lowered if negative) in its own vertical plane, its speed kept. */
+    private static Raised(Launch: Vec3, Degrees: number): Vec3 {
+        const Flat = Math.hypot(Launch.X, Launch.Z);
+        if (Flat < 1e-9) return Launch;
+        const Elevation = Math.atan2(Launch.Y, Flat) + ToRadians(Degrees), Speed = Launch.Length();
+        const Across = Speed * Math.cos(Elevation) / Flat;
+        return new Vec3(Launch.X * Across, Speed * Math.sin(Elevation), Launch.Z * Across);
     }
 
     /** Degrees right of straight down the table toward the computer (-Z), of a horizontal direction. */

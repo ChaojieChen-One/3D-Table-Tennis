@@ -432,3 +432,21 @@ test("AMirroredComputerPlaysTheNearEnd", () => {
     Check(NearStrokes >= 1 && FarStrokes >= 1,
           `near computer struck ${NearStrokes} times, far computer ${FarStrokes}; rally ended: ${Game.LastPoint()}`);
 });
+
+/**
+ * Why a miss was a miss: with the player's racket a metre outside the table at a depth the warm-up
+ * feed reaches, the feed passes it and loses the point, and the rally says how far to the player's
+ * left the ball went, as the geometry puts it: the ball's line against the racket's, less the blade.
+ */
+test("AMissSaysWhereTheBallWent", () => {
+    const Game = new Rally(new CursorFollower(new Vec3(ReachEnvelope.MaxX, 0, 1.4)));
+    Game.FeedNow();
+    let Steps = 0;
+    while (Game.LastPoint() === null && Steps++ < FixedClock.StepsPerSecond * 10) Game.Step();
+    const Missed = Game.LastMiss() ?? "";
+    const Centimetres = Number(/(\d+) cm left of/.exec(Missed)?.[1] ?? NaN);
+    // The racket stands at MaxX and the warm-up feed comes down near the centre line, so the ball
+    // passes more than a metre to its left, less the blade's radius, and never past the racket's own x.
+    const Right = Game.LastPoint()?.Winner === "Far" && Centimetres > 100 && Centimetres < ReachEnvelope.MaxX * 100 + 50;
+    Check(Right, `${Game.LastPoint()}; missed: ${Missed}`);
+});

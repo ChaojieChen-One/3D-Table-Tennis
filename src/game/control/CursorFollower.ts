@@ -147,6 +147,9 @@ export class CursorFollower {
     /** The racket's velocity as smoothed for its swing, m/s, unread. */
     Moving(): Vec3 { return this.MovingNow; }
 
-    /** The velocity a ball meets on this racket: its smoothed motion, read as a stroke by Swing. */
-    SwingVelocity(): Vec3 { return Swing.Read(this.MovingNow, this.Facing); }
+    /**
+     * The velocity a ball meets on this racket: its smoothed motion, read as a stroke by Swing, and
+     * swung up or down through the ball as far as the face is tilted (Swing.Brush).
+     */
+    SwingVelocity(): Vec3 { return Swing.Read(this.MovingNow, this.Facing).Plus(Swing.Brush(this.Normal, this.MovingNow, this.Facing)); }
 }
