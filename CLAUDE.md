@@ -88,7 +88,7 @@ Only `app` touches the DOM or Three.js; only `server` touches Node.
 ### Fixed clock
 
 Physics runs only on `FixedClock` steps of 1/480 s, with each frame clamped to 0.25 s. The game
-speed (`GameLoop.DefaultSpeed` 0.5 while hitting is in development) slows real time before it
+speed (`GameLoop.DefaultSpeed` 0.75 while hitting is in development) slows real time before it
 reaches the clock. Every constant in `game` and `engine` is in game seconds. The loop draws
 `RallyView.Between(Before, After, Clock.Alpha())`. Game and engine code never see frame time.
 

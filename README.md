@@ -45,7 +45,7 @@ The camera is where you stand, behind your end of the table. Move the mouse to m
 
 A ball met near the edge of the paddle follows your aim less than one met in the middle. The display on the left shows the score, who won the last point and why, and the spin on the ball.
 
-> **Note:** While hitting is being developed, the game starts at half speed. Press `[` and `]` to make it slower or faster.
+> **Note:** While hitting is being developed, the game starts at 75% speed. Press `[` and `]` to make it slower or faster.
 
 ### Controls
 
@@ -109,7 +109,7 @@ Browsers can't open raw network sockets, so both players connect through a small
 
 A free Render service sleeps after 15 minutes without traffic and takes about a minute to wake; opening the Match page starts waking it. A [playit.gg](https://playit.gg) tunnel to local port `26780` also works, typed under **CONNECTION** on the Match page.
 
-A match runs at half speed on both computers, and if one player leaves, the other goes back to practice.
+A match runs at 75% speed on both computers, and if one player leaves, the other goes back to practice.
 
 ## For developers
 
